@@ -1,0 +1,32 @@
+# Сервисы СМА. Сейчас (M1) база и миграции; loader, mock-api, backup добавляются на следующих этапах.
+
+services:
+  db:
+    image: postgres:16.4
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-sma}
+      POSTGRES_USER: ${POSTGRES_USER:-sma_owner}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?заполните POSTGRES_PASSWORD в .env}
+    ports:
+      # Только для этого компьютера: DBeaver и тесты подключаются к localhost:5432.
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Применяет миграции и завершается.
+  migrate:
+    build: .
+    image: sma-pipeline
+    command: python db/migrate.py
+    env_file: .env
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:

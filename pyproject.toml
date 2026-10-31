@@ -1,0 +1,15 @@
+# Только настройки инструментов (ruff, pytest); зависимости — в requirements.txt.
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["data", "backups", "reports"]
+
+[tool.ruff.lint]
+# E, W — стиль; F — ошибки (неиспользуемые импорты и т. п.); I — порядок импортов;
+# B — частые ошибки; UP — современный синтаксис; DTZ — запрет naive datetime (раздел 4.2).
+select = ["E", "W", "F", "I", "B", "UP", "DTZ"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

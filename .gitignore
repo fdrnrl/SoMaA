@@ -1,0 +1,22 @@
+# Секреты
+.env
+
+# Сгенерированные данные, копии, отчеты
+backups/
+data/generated/
+reports/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Инструменты
+.coverage
+htmlcov/
+.pytest_cache/
+.ruff_cache/
+.hypothesis/
+
+# macOS
+.DS_Store

@@ -1,0 +1,31 @@
+# CI: линтер и тесты на каждый коммит и merge request (раздел 17).
+
+image: python:3.12.10-slim-bookworm
+
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  # Временная база только для CI: вход без пароля, чтобы не хранить секрет в репозитории.
+  POSTGRES_DB: sma_test
+  POSTGRES_USER: sma_owner
+  POSTGRES_HOST_AUTH_METHOD: trust
+  SMA_DB_HOST: postgres
+  SMA_DB_PORT: "5432"
+
+cache:
+  paths:
+    - .cache/pip
+
+before_script:
+  - apt-get update && apt-get install -y --no-install-recommends make
+  - python -m venv .venv
+  - .venv/bin/pip install -r requirements.txt
+
+lint:
+  script:
+    - make lint
+
+test:
+  services:
+    - postgres:16.4
+  script:
+    - make test
