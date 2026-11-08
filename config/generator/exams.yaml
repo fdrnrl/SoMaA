@@ -1,0 +1,72 @@
+# Параметры экзаменов для генератора (раздел 10.3 спецификации).
+# Шкалы и коды кодификатора — условные, синтетические. Для реальных данных — документы ФИПИ.
+
+exam_year: 2026
+exam_date: "2026-12-05"
+
+exams:
+  EGE:
+    subject_code: "02"
+    subject_name: "Математика профильная"
+    grade_level: 11
+    part1_tasks: 12                 # задания 1..12, по 1 баллу, проверка автоматическая
+    part2_max_scores: {13: 2, 14: 3, 15: 2, 16: 2, 17: 3, 18: 4, 19: 4}
+    max_primary_score: 32
+    duration_min: 235
+    start_spread_min: 8             # начало: 10:00 местного + 0..8 мин
+    has_rooms: true
+    has_proctoring: true
+    blocks: null
+    scale_type: primary_to_test
+    threshold_score: 6
+    answer_kind: number             # целые и десятичные с запятой
+
+  OGE:
+    subject_code: "02"
+    subject_name: "Математика"
+    grade_level: 9
+    part1_tasks: 19
+    part2_max_scores: {20: 2, 21: 2, 22: 2, 23: 2, 24: 2, 25: 2}
+    max_primary_score: 31
+    duration_min: 235
+    start_spread_min: 8
+    has_rooms: true
+    has_proctoring: true
+    blocks:
+      algebra: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 20, 21, 22]
+      geometry: [15, 16, 17, 18, 19, 23, 24, 25]
+    scale_type: primary_to_grade
+    threshold_score: 8
+    answer_kind: number
+
+  VPR:
+    subject_code: "01"
+    subject_name: "Русский язык"
+    grade_level: 5
+    part1_tasks: 8
+    part2_max_scores: {9: 3, 10: 3, 11: 3, 12: 3}
+    max_primary_score: 20
+    duration_min: 45
+    start_spread_min: 4
+    has_rooms: false                # room_code = null
+    has_proctoring: false           # /proctoring-events — всегда пустой список
+    blocks: null
+    scale_type: primary_to_grade
+    threshold_score: 7
+    answer_kind: word               # слова и наборы цифр
+
+  NIKO:
+    subject_code: "05"              # код ОГЭ «Информатика» — допущение формата v2
+    subject_name: "Информатика"
+    grade_level: 8
+    part1_tasks: 10
+    part2_max_scores: {11: 2, 12: 2}
+    max_primary_score: 14
+    duration_min: 90
+    start_spread_min: 8
+    has_rooms: true
+    has_proctoring: true
+    blocks: null
+    scale_type: primary_to_level
+    threshold_score: 5
+    answer_kind: binary             # целые и двоичные строки

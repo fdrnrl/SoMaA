@@ -1,0 +1,28 @@
+# Профиль small: маленький набор для тестов и первой загрузки (раздел 10.1).
+# Без аномалий и версий во времени — они появятся на этапе M6.
+
+name: small
+exams: [EGE, OGE, VPR, NIKO]
+participants_per_exam: 40
+variants_per_exam: 2
+
+regions:
+  dictionary_count: 5               # регионов в справочнике (первые из приложения 21.2)
+  used_count: 3                     # в скольких из них реально сдают
+  big_regions: 0                    # регионы с 8–10 школами (для А1) — в small не нужны
+  schools_per_big_region: 10
+
+schools:
+  dictionary_count: 12              # школ в справочнике
+  used_count: 8                     # школ, где есть участники
+  size_min: 4                       # участников одного экзамена в школе
+  size_max: 6
+
+room_size_max: 15
+
+rates:
+  absent: 0.03                      # доля не явившихся (берется ровно round(доля × N))
+  annulled: 0.02
+  empty_answer_base: 0.04           # базовая вероятность пустого ответа (раздел 10.5)
+
+snapshot: after_check               # M2 умеет только этот снимок

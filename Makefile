@@ -6,7 +6,7 @@ PYTHON ?= .venv/bin/python
 # В контейнерах адрес базы — db (из .env); в CI — postgres (из .gitlab-ci.yml).
 export SMA_DB_HOST ?= localhost
 
-.PHONY: install up down logs psql build migrate db-reset test lint format cov
+.PHONY: install up down logs psql build migrate db-reset gen-small test lint format cov
 
 ## Создать виртуальное окружение и установить зависимости
 install:
@@ -42,6 +42,11 @@ migrate:
 db-reset:
 	docker compose down -v
 	docker compose up -d --build --wait
+
+## Сгенерировать маленький набор синтетических данных в data/generated/small
+gen-small:
+	$(PYTHON) -m sma.generator.generate --profile config/generator/small.yaml \
+		--out data/generated/small --seed 2026
 
 ## Тесты. Можно выбрать часть: make test ARGS="tests/unit/test_contract.py -x"
 test:
