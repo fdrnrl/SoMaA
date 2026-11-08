@@ -1,0 +1,39 @@
+# Платформы и настройки загрузчика (раздел 8.1).
+# source: file — файлы генератора; api — HTTP API платформы (этап M4).
+# Токены — только в .env, здесь — имя переменной окружения.
+
+platforms:
+  - exam_type: EGE
+    source: file
+    path: data/generated/small/ege
+    base_url: null
+    token_env: EGE_API_TOKEN
+    enabled: true
+  - exam_type: OGE
+    source: file
+    path: data/generated/small/oge
+    base_url: null
+    token_env: OGE_API_TOKEN
+    enabled: true
+  - exam_type: VPR
+    source: file
+    path: data/generated/small/vpr
+    base_url: null
+    token_env: VPR_API_TOKEN
+    enabled: true
+  - exam_type: NIKO
+    source: file
+    path: data/generated/small/niko
+    base_url: null
+    token_env: NIKO_API_TOKEN
+    enabled: true
+
+intervals_sec:
+  facts: 60                 # sessions, answers, expert-reviews, proctoring-events
+  live_status: 30
+  kim_scales: 600
+  dictionaries: 3600
+min_gap_per_endpoint_sec: 10
+request_timeout_sec: 30
+since_overlap_sec: 5
+initial_since: "1970-01-01T00:00:00+00:00"

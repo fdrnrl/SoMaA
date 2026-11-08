@@ -39,3 +39,26 @@ def db(test_database):
     with connect(dbname=test_database) as conn:
         yield conn
         conn.rollback()
+
+
+# Таблицы, в которые пишет загрузчик. Загрузчик сам делает commit, поэтому
+# откатом их не очистить — только TRUNCATE.
+LOADER_TABLES = (
+    "core.sessions, core.answers, core.expert_reviews, core.proctoring_events, "
+    "core.kim_tasks, core.scales, core.regions, core.schools, core.subjects, core.live_status, "
+    "ops.load_log, ops.rejected_records, ops.watermarks, ops.dictionary_snapshots, "
+    "ops.live_status_history"
+)
+
+
+@pytest.fixture
+def loader_db(test_database):
+    """Соединение с пустыми таблицами загрузчика; после теста они снова очищаются."""
+    with connect(dbname=test_database) as conn:
+        conn.execute(f"TRUNCATE {LOADER_TABLES} RESTART IDENTITY CASCADE")
+        conn.commit()
+        yield conn
+        conn.rollback()
+        conn.execute("RESET ROLE")
+        conn.execute(f"TRUNCATE {LOADER_TABLES} RESTART IDENTITY CASCADE")
+        conn.commit()

@@ -1,0 +1,28 @@
+# Профиль medium: основной набор для разработки витрин (раздел 10.1).
+# Пока без аномалий и версий во времени — они появятся на этапе M6.
+
+name: medium
+exams: [EGE, OGE, VPR, NIKO]
+participants_per_exam: 430
+variants_per_exam: 2
+
+regions:
+  dictionary_count: 20
+  used_count: 6
+  big_regions: 4                    # 77, 66, 54, 16 — по 10 школ (нужны для А1)
+  schools_per_big_region: 10
+
+schools:
+  dictionary_count: 120
+  used_count: 42                    # 4 × 10 в больших регионах + по 1 в двух остальных
+  size_min: 10
+  size_max: 12
+
+room_size_max: 15
+
+rates:
+  absent: 0.03
+  annulled: 0.02
+  empty_answer_base: 0.04
+
+snapshot: after_check
