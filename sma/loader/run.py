@@ -33,6 +33,7 @@ import yaml
 from dotenv import load_dotenv
 
 from sma.db import connect
+from sma.loader import store
 from sma.loader.cycle import (
     ALL_ENDPOINTS,
     FACT_ENDPOINTS,
@@ -50,6 +51,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_CONFIG = "config/platforms.yaml"
 RECONNECT_PAUSE_SEC = 5
+MART_REFRESH_SEC = 30  # витрины — не чаще раза в 30 с и только если были новые данные
 
 
 # --- Настройки ---------------------------------------------------------------------------
@@ -152,12 +154,14 @@ def run_platform(
     clock: Clock | None = None,
     load_fn: LoadFn = load_endpoint,
     reconnect: Callable[[], psycopg.Connection] | None = None,
+    changed: threading.Event | None = None,
 ) -> None:
     """Опрашивает адреса одной платформы по расписанию, пока не выставлен stop.
 
     Все адреса сначала опрашиваются сразу, затем каждый — через свой интервал после
     начала предыдущего запроса (после ошибки — через retry_sec). Страницы одного цикла
-    идут подряд.
+    идут подряд. Если сохранена хоть одна запись — выставляется changed (витрины
+    нужно обновить).
     """
     clock = clock or Clock()
     next_run = {endpoint: clock.now() for endpoint in ALL_ENDPOINTS}
@@ -172,6 +176,8 @@ def run_platform(
                     conn, job.source, job.platform, endpoint, job.settings, stop.is_set
                 )
                 failed = result.status == "error"
+                if changed is not None and result.saved > 0:
+                    changed.set()
             except psycopg.Error as problem:
                 logger.error("%s %s: база недоступна — %s", job.platform, endpoint, problem)
                 if reconnect is None:
@@ -206,11 +212,11 @@ def reopen(
     return conn
 
 
-def platform_worker(job: PlatformJob, stop: threading.Event) -> None:
+def platform_worker(job: PlatformJob, stop: threading.Event, changed: threading.Event) -> None:
     """Поток одной платформы: свое соединение с базой на все время работы."""
     conn = loader_connection()
     try:
-        run_platform(job, conn, stop, reconnect=loader_connection)
+        run_platform(job, conn, stop, reconnect=loader_connection, changed=changed)
     except Exception:
         logger.exception("%s: поток загрузчика упал", job.platform)
         stop.set()
@@ -220,9 +226,48 @@ def platform_worker(job: PlatformJob, stop: threading.Event) -> None:
         logger.info("%s: поток загрузчика остановлен", job.platform)
 
 
+class MartRefresher:
+    """Обновляет витрины, если с прошлого раза загружены новые данные.
+
+    Потоки платформ независимы, поэтому «после полного цикла по всем платформам» означает:
+    раз в MART_REFRESH_SEC, если хоть один поток что-то сохранил. Задержка до витрины —
+    интервал опроса (60 с) + MART_REFRESH_SEC + время обновления — не больше 120 с (NFR-01).
+    """
+
+    def __init__(self, changed: threading.Event):
+        self.changed = changed
+        self.conn: psycopg.Connection | None = None
+        self.next_at = time.monotonic()
+
+    def tick(self) -> None:
+        """Вызывается часто; сама решает, пора ли обновлять."""
+        if time.monotonic() < self.next_at or not self.changed.is_set():
+            return
+        self.next_at = time.monotonic() + MART_REFRESH_SEC
+        self.changed.clear()
+        started = time.monotonic()
+        try:
+            if self.conn is None or self.conn.closed:
+                self.conn = loader_connection()
+            store.refresh_marts(self.conn)
+            logger.info("Витрины обновлены за %.1f с", time.monotonic() - started)
+        except psycopg.Error as problem:
+            logger.error("Витрины не обновлены: %s", problem)
+            self.changed.set()  # попробовать снова в следующий раз
+            if self.conn is not None:
+                self.conn.close()
+            self.conn = None
+
+    def close(self) -> None:
+        if self.conn is not None:
+            self.conn.close()
+
+
 def run_forever(jobs: list[PlatformJob]) -> None:
-    """Запускает потоки платформ и ждет сигнала остановки."""
+    """Запускает потоки платформ, обновляет витрины и ждет сигнала остановки."""
     stop = threading.Event()
+    changed = threading.Event()
+    refresher = MartRefresher(changed)
 
     def on_signal(signum, _frame) -> None:
         logger.info("Получен сигнал %s: дожидаемся конца текущих страниц", signum)
@@ -231,16 +276,18 @@ def run_forever(jobs: list[PlatformJob]) -> None:
     signal.signal(signal.SIGINT, on_signal)
     signal.signal(signal.SIGTERM, on_signal)
     with ThreadPoolExecutor(max_workers=len(jobs), thread_name_prefix="loader") as pool:
-        futures = [pool.submit(platform_worker, job, stop) for job in jobs]
+        futures = [pool.submit(platform_worker, job, stop, changed) for job in jobs]
         while not stop.is_set() and not all(f.done() for f in futures):
+            refresher.tick()
             stop.wait(1)
+    refresher.close()
     for future in futures:
         if future.exception() is not None:
             raise SystemExit(1)
 
 
 def run_once(jobs: list[PlatformJob]) -> list[EndpointResult]:
-    """Один цикл по всем адресам всех платформ и выход."""
+    """Один цикл по всем адресам всех платформ, обновление витрин и выход."""
     results = []
     with loader_connection() as conn:
         for job in jobs:
@@ -248,6 +295,10 @@ def run_once(jobs: list[PlatformJob]) -> list[EndpointResult]:
                 results.append(
                     load_endpoint(conn, job.source, job.platform, endpoint, job.settings)
                 )
+        if any(result.saved for result in results):
+            started = time.monotonic()
+            store.refresh_marts(conn)
+            logger.info("Витрины обновлены за %.1f с", time.monotonic() - started)
     return results
 
 

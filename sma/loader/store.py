@@ -299,6 +299,12 @@ def save_live_status(conn: Connection, status: dict, load_id: int) -> None:
     conn.execute(SAVE_LIVE_STATUS_HISTORY, (status["exam_type"], generated_at, Jsonb(status)))
 
 
+def refresh_marts(conn: Connection) -> None:
+    """Обновляет материализованные витрины (функция mart.refresh_all, раздел 12)."""
+    conn.execute("SELECT mart.refresh_all()")
+    conn.commit()
+
+
 def save_dictionary_snapshot(
     conn: Connection, platform: str, endpoint: str, items: list[dict]
 ) -> None:
