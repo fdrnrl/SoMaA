@@ -154,6 +154,9 @@ DBeaver: PostgreSQL, host `localhost`, port `5432`, database `sma`, user и па
 | `mart.live` | платформа | `in_progress`, `finished`, `annulled`, `absent` — сводка платформы; `generated_at` — когда платформа ее составила; `last_successful_load_at` — последняя успешная загрузка; `anomalies_by_rule` — `{"A1": 1, "A3": 2}` из `analytics.anomalies` |
 | `mart.data_freshness` | платформа × адрес API | `last_ok_at`, `last_error_at`, `last_error_reason`, `lag_sec` — секунд с последней успешной загрузки |
 
+**Готовые запросы** к каждой витрине, соединения, данные для правил и чтение из Python —
+в [marts_guide.md](marts_guide.md).
+
 Процент выполнения = первичный балл / максимальный × 100. Максимальный первичный балл
 в синтетических данных: ЕГЭ 32, ОГЭ 31, ВПР 20, НИКО 14.
 
