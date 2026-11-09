@@ -1,7 +1,7 @@
 # Сервисы СМА (раздел 15.1).
 #   make up   — db, migrate, loader
 #   make dev  — то же плюс mock-api; загрузчик берет данные из mock-api
-# Сервис backup (профиль exam) появится на этапе M7.
+#   make backup-service — копии базы каждые 30 минут (профиль exam)
 
 services:
   db:
@@ -41,6 +41,7 @@ services:
       SMA_PLATFORMS_CONFIG: ${SMA_LOADER_CONFIG:-config/platforms.yaml}
     volumes:
       - ./data:/app/data:ro
+      - ./reports:/app/reports        # отчеты о качестве (раз в 10 минут)
     depends_on:
       db:
         condition: service_healthy
@@ -62,6 +63,20 @@ services:
       - "127.0.0.1:8000:8000"
     volumes:
       - ./data:/app/data:ro
+    restart: unless-stopped
+
+  # Резервные копии каждые 30 минут (раздел 14). pg_dump 16 — в образе.
+  backup:
+    build: .
+    image: sma-pipeline
+    profiles: [exam]
+    command: python -m sma.backup.run --every 30
+    env_file: .env
+    volumes:
+      - ./backups:/app/backups
+    depends_on:
+      db:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:

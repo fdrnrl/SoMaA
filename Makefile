@@ -10,9 +10,13 @@ export SMA_DB_HOST ?= localhost
 DATA ?= data/generated/small
 # Скорость воспроизведения экзамена для make mock-replay
 SPEED ?= 10
+# Копия для make restore (по умолчанию — самая свежая) и база, куда восстанавливать
+FILE ?= $(lastword $(sort $(wildcard backups/sma_*.dump)))
+TARGET ?= sma_restore
 
 .PHONY: install up dev db-up down logs psql build migrate db-reset gen-small gen-medium gen-large \
-	load-files loader mock-api mock-replay test lint format cov
+	load-files loader loader-mock mock-api mock-replay quality backup restore backup-service \
+	test-backup rules dashboard test lint format cov
 
 ## Создать виртуальное окружение и установить зависимости
 install:
@@ -38,7 +42,7 @@ db-up:
 
 ## Остановить все сервисы (данные базы сохраняются в томе pgdata)
 down:
-	docker compose --profile dev down
+	docker compose --profile dev --profile exam down
 
 ## Журнал сервисов
 logs:
@@ -58,7 +62,7 @@ migrate:
 
 ## Удалить рабочую базу со всеми данными и создать заново (только при разработке!)
 db-reset:
-	docker compose --profile dev down -v
+	docker compose --profile dev --profile exam down -v
 	$(MAKE) db-up
 
 ## Сгенерировать маленький набор синтетических данных в data/generated/small
@@ -84,6 +88,10 @@ load-files:
 loader:
 	$(PYTHON) -m sma.loader.run
 
+## Загрузчик на этом компьютере из тестового API http://localhost:8000 (для репетиции)
+loader-mock:
+	$(PYTHON) -m sma.loader.run --config config/platforms.mock.yaml --api-root http://localhost:8000
+
 ## Тестовый API на этом компьютере: http://localhost:8000 (сначала make gen-medium)
 mock-api:
 	MOCK_ADMIN=1 $(PYTHON) -m sma.mockapi.server --data data/generated/medium --port 8000
@@ -92,6 +100,38 @@ mock-api:
 mock-replay:
 	MOCK_ADMIN=1 $(PYTHON) -m sma.mockapi.server --data data/generated/medium --port 8000 \
 		--replay --speed $(SPEED)
+
+## Проверки качества данных и отчет в reports/ (раздел 13)
+quality:
+	$(PYTHON) -m sma.quality.report
+
+## Одна резервная копия базы в backups/ (pg_dump 16 из образа)
+backup:
+	docker compose --profile exam run --rm --build backup python -m sma.backup.run --once
+
+## Восстановить копию в новую базу: make restore FILE=backups/sma_….dump TARGET=sma_restore
+restore:
+	docker compose --profile exam run --rm backup python -m sma.backup.restore \
+		--file $(FILE) --target-db $(TARGET)
+
+## Копии каждые 30 минут в фоне (на время экзамена)
+backup-service:
+	docker compose --profile exam up -d --build backup
+
+## Тест резервного копирования (T-35) внутри контейнера, где есть pg_dump и pg_restore
+test-backup:
+	docker compose --profile exam run --rm --build backup python -m pytest tests/integration/test_backup.py -q
+
+## Расчет правил аномалий (код аналитика — sma/rules/)
+rules:
+	$(PYTHON) -m sma.rules.run
+
+## Дашборд Streamlit (код — dashboard/). Нужен streamlit в requirements.txt (по согласованию)
+dashboard:
+	@$(PYTHON) -c "import streamlit" 2>/dev/null || { \
+		echo "Streamlit не установлен: добавьте streamlit==<версия> в requirements.txt и make install"; \
+		exit 1; }
+	PYTHONPATH=. $(PYTHON) -m streamlit run dashboard/app.py
 
 ## Тесты. Можно выбрать часть: make test ARGS="tests/unit/test_contract.py -x"
 test:

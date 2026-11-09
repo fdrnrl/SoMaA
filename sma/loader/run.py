@@ -45,6 +45,7 @@ from sma.loader.cycle import (
     load_endpoint,
 )
 from sma.loader.sources import ApiSource, FileSource, Source
+from sma.quality.report import REPORTS_DIR, run_quality
 from sma.timeutil import parse_datetime
 
 logger = logging.getLogger(__name__)
@@ -52,6 +53,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_CONFIG = "config/platforms.yaml"
 RECONNECT_PAUSE_SEC = 5
 MART_REFRESH_SEC = 30  # витрины — не чаще раза в 30 с и только если были новые данные
+QUALITY_SEC = 600  # проверки качества — раз в 10 минут (раздел 13)
 
 
 # --- Настройки ---------------------------------------------------------------------------
@@ -263,11 +265,32 @@ class MartRefresher:
             self.conn.close()
 
 
-def run_forever(jobs: list[PlatformJob]) -> None:
-    """Запускает потоки платформ, обновляет витрины и ждет сигнала остановки."""
+class QualityRunner:
+    """Проверки качества данных раз в QUALITY_SEC (раздел 13); первый запуск — через
+    QUALITY_SEC после старта, когда данные уже загружены.
+    """
+
+    def __init__(self, config_path: Path | None):
+        self.config_path = config_path
+        self.next_at = time.monotonic() + QUALITY_SEC
+
+    def tick(self) -> None:
+        if time.monotonic() < self.next_at:
+            return
+        self.next_at = time.monotonic() + QUALITY_SEC
+        try:
+            with loader_connection() as conn:
+                run_quality(conn, REPORTS_DIR, self.config_path)
+        except Exception:  # проверки не должны останавливать загрузку
+            logger.exception("Проверки качества не выполнены")
+
+
+def run_forever(jobs: list[PlatformJob], config_path: Path | None = None) -> None:
+    """Запускает потоки платформ, обновляет витрины, проверяет качество и ждет остановки."""
     stop = threading.Event()
     changed = threading.Event()
     refresher = MartRefresher(changed)
+    quality = QualityRunner(config_path)
 
     def on_signal(signum, _frame) -> None:
         logger.info("Получен сигнал %s: дожидаемся конца текущих страниц", signum)
@@ -279,6 +302,7 @@ def run_forever(jobs: list[PlatformJob]) -> None:
         futures = [pool.submit(platform_worker, job, stop, changed) for job in jobs]
         while not stop.is_set() and not all(f.done() for f in futures):
             refresher.tick()
+            quality.tick()
             stop.wait(1)
     refresher.close()
     for future in futures:
@@ -334,7 +358,7 @@ def main() -> None:
     logger.info("Конфиг %s, платформы: %s", config_path, [job.platform for job in jobs])
 
     if not args.once:
-        run_forever(jobs)
+        run_forever(jobs, config_path)
         return
     results = run_once(jobs)
     errors = [r for r in results if r.status == "error"]

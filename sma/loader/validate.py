@@ -18,6 +18,8 @@ from sma.contract import ARRAY, BOOL, DATETIME, INT, OBJECT, STRING
 from sma.timeutil import try_parse_datetime
 
 REMOVED = "<removed>"
+NUL = "\x00"
+REPLACEMENT = "�"  # «�» — замена символа, который нельзя сохранить
 SCORE_ENDPOINTS = ("answers", "expert-reviews")
 
 
@@ -66,20 +68,63 @@ def find_forbidden_keys(value: object, allow_name: bool, path: str = "") -> list
 
 
 def remove_forbidden_values(value: object, allow_name: bool) -> object:
-    """Копия значения, где у запрещенных ключей значение заменено на "<removed>".
+    """Копия значения, где у запрещенных ключей значение заменено на "<removed>",
+    а символы, которые нельзя сохранить в базе (NUL, одиночные суррогаты), — на «�».
 
     Так отклоненную запись можно сохранить в ops.rejected_records без персональных данных.
     """
     if isinstance(value, dict):
         return {
-            key: REMOVED
+            make_storable(str(key)): REMOVED
             if is_forbidden(key, allow_name)
             else remove_forbidden_values(inner, allow_name)
             for key, inner in value.items()
         }
     if isinstance(value, list):
         return [remove_forbidden_values(inner, allow_name) for inner in value]
+    if isinstance(value, str):
+        return make_storable(value)
     return value
+
+
+def make_storable(text: str) -> str:
+    """Символы, которые нельзя сохранить в базе, заменяются на «�» (U+FFFD)."""
+    if storable(text):
+        return text
+    return "".join(char if storable(char) else REPLACEMENT for char in text)
+
+
+def storable(text: str) -> bool:
+    """Строку можно сохранить в PostgreSQL: нет символа NUL и она кодируется в UTF-8
+    (одиночный суррогат вроде "\\ud800" из JSON — не кодируется).
+    """
+    if NUL in text:
+        return False
+    try:
+        text.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
+
+
+def find_unstorable(value: object, path: str = "") -> list[str]:
+    """Пути строк и ключей, которые нельзя сохранить в базе: запись такой строки
+    отменила бы всю страницу, и загрузчик застрял бы на ней.
+    """
+    if isinstance(value, str):
+        return [] if storable(value) else [path or "value"]
+    found = []
+    if isinstance(value, dict):
+        for key, inner in value.items():
+            full = f"{path}.{key}" if path else str(key)
+            if storable(str(key)):
+                found += find_unstorable(inner, full)
+            else:
+                found.append(repr(full))  # repr экранирует символ, иначе путь не сохранить
+    elif isinstance(value, list):
+        for index, inner in enumerate(value):
+            found += find_unstorable(inner, f"{path}[{index}]")
+    return found
 
 
 # --- Проверка значений -----------------------------------------------------------------------
@@ -212,6 +257,10 @@ def validate_record(record: object, endpoint: str, platform: str) -> Validation:
         for path in find_forbidden_keys(record, allow_name)
     ]
     problems += check_record_id(record)
+    problems += [
+        Problem("bad_format", path, f"{path}: строку нельзя сохранить в базе (NUL или не UTF-8)")
+        for path in find_unstorable(record)
+    ]
 
     field_problems, fields = check_fields(record, contract.ENDPOINT_FIELDS[endpoint])
     problems += field_problems
@@ -251,6 +300,10 @@ def validate_live_status(status: object, platform: str) -> Validation:
     ]
     field_problems, cleaned = check_fields(status, contract.LIVE_STATUS_FIELDS)
     problems += field_problems + check_exam_type(cleaned, platform)
+    problems += [
+        Problem("bad_format", path, f"{path}: строку нельзя сохранить в базе (NUL или не UTF-8)")
+        for path in find_unstorable(status)
+    ]
     dropped = [key for key in status if key not in cleaned and not is_forbidden(key, False)]
     if problems:
         return Validation(False, None, problems, dropped)

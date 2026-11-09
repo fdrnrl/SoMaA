@@ -296,3 +296,26 @@ def test_generated_small_has_no_rejections(small_dataset, exam_type):
             check = validate_record(item, endpoint, exam_type)
             assert check.ok, (endpoint, check.problems)
             assert check.dropped == []
+
+
+def test_nul_character_is_rejected():
+    """Символ NUL нельзя сохранить в PostgreSQL: запись отклоняется, а не роняет страницу."""
+    check = validate_record(changed(ANSWER, answer="1\x002"), "answers", "OGE")
+    assert ("bad_format", "answer") in reasons(check)
+    nested = copy.deepcopy(SESSION)
+    nested["oge"]["block_scores"] = {"alg\x00ebra": 1}
+    assert not validate_record(nested, "sessions", "OGE").ok
+
+
+def test_nul_removed_from_rejected_payload():
+    cleaned = remove_forbidden_values({"answer": "a\x00b", "k\x00": 1}, allow_name=False)
+    assert "\x00" not in json.dumps(cleaned)
+
+
+def test_lone_surrogate_is_rejected():
+    """json.loads('"\\ud800"') дает строку, которую нельзя закодировать в UTF-8."""
+    text = json.loads('"\\ud800"')
+    check = validate_record(changed(ANSWER, answer=text), "answers", "OGE")
+    assert ("bad_format", "answer") in reasons(check)
+    cleaned = remove_forbidden_values({"answer": text}, allow_name=False)
+    json.dumps(cleaned, ensure_ascii=False).encode("utf-8")

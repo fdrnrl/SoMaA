@@ -288,3 +288,21 @@ def test_parallel_dictionary_upserts_do_not_deadlock(test_database, loader_db):
         thread.join()
     assert errors == []
     assert count(loader_db, "core.schools") == 200
+
+
+def test_nul_record_rejected_rest_of_page_saved(loader_db, tmp_path):
+    """Запись с NUL отклоняется, остальные записи страницы сохраняются (загрузка не застревает)."""
+    good = copy.deepcopy(SESSION)
+    bad = {
+        **copy.deepcopy(SESSION),
+        "record_id": "with-nul",
+        "participant_id": "p_000002",
+        "room_code": "03\x0012",
+    }
+    write_endpoint(tmp_path, "sessions", [good, bad])
+    results = run_cycle(loader_db, FileSource(tmp_path), "OGE", SETTINGS, ("sessions",))
+    assert (results[0].status, results[0].saved, results[0].rejected) == ("partial", 1, 1)
+    reason, payload = loader_db.execute(
+        "SELECT reason_code, payload FROM ops.rejected_records"
+    ).fetchone()
+    assert reason == "bad_format" and payload["room_code"] == "03\ufffd12"
