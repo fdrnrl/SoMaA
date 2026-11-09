@@ -35,7 +35,7 @@ API платформ ЕГЭ, ОГЭ, ВПР, НИКО │ генератор (ф
 |---|---|---|---|
 | Аналитик аномалий | `sma/rules/` — `anomalies.py` (А1–А3), `school_index.py` (П1–П4, индекс), `run.py` (точка входа) | `tests/rules/` | `make rules` |
 | Разработчик дашбордов | `dashboard/` — `app.py` (главная), `pages/` (остальные страницы), `data.py` (запросы к витринам), `auth.py` (вход) | `tests/dashboard/` | `make dashboard` |
-| Пайплайны | всё остальное: `sma/loader`, `sma/generator`, `db/`, … | `tests/unit`, `tests/integration`, `tests/properties` | см. команды ниже |
+| Пайплайны | все остальное: `sma/loader`, `sma/generator`, `db/`, … | `tests/unit`, `tests/integration`, `tests/properties` | см. команды ниже |
 
 - Данные — **только из витрин** `mart` (что где лежит — [docs/developer_guide.md](docs/developer_guide.md));
   результаты правил — в схему `analytics`, пользователи дашборда — в схему `app`.
@@ -47,6 +47,7 @@ API платформ ЕГЭ, ОГЭ, ВПР, НИКО │ генератор (ф
 ## Развертывание с нуля (≤ 30 минут)
 
 Проверено на macOS; на Linux команды те же (кроме `sed -i ''` → `sed -i`).
+**Windows** — через WSL2, см. раздел [«Windows»](#windows) ниже.
 
 **1. Установить** (если еще нет): Docker Desktop (запустить, дождаться «Engine running»),
 Python 3.12, git, make. Проверка:
@@ -96,6 +97,68 @@ make lint          # оформление кода
 make quality       # отчет о качестве данных в reports/
 ```
 
+### Windows
+
+Проект запускается в **WSL2** — настоящем Linux (Ubuntu) внутри Windows. Docker Desktop
+в Windows и так работает поверх WSL2, а в Ubuntu все команды этого README работают без изменений.
+Нужны Windows 10 (версия 2004 и новее) или Windows 11.
+
+**1. Установить WSL2 и Ubuntu.** PowerShell **от имени администратора**:
+
+```powershell
+wsl --install -d Ubuntu-24.04
+```
+
+Перезагрузить компьютер. При первом запуске Ubuntu (меню «Пуск» → Ubuntu 24.04) придумать
+имя пользователя и пароль Linux — пароль понадобится для `sudo`.
+
+**2. Установить Docker Desktop для Windows** и включить интеграцию с Ubuntu:
+Docker Desktop → Settings → Resources → WSL integration → включить **Ubuntu-24.04** →
+Apply & restart. Docker Desktop должен быть запущен, когда вы работаете с проектом.
+
+**3. В терминале Ubuntu** установить инструменты (Python 3.12 в Ubuntu 24.04 уже есть):
+
+```bash
+sudo apt update
+sudo apt install -y make git python3.12-venv openssl
+docker run --rm hello-world          # проверка: Docker виден из Ubuntu
+```
+
+**4. Клонировать проект в домашнюю папку Linux** — не на диск `C:` (`/mnt/c/...`): там все
+работает в разы медленнее, а Windows-программы меняют окончания строк.
+
+```bash
+cd ~
+git clone <адрес репозитория> sma-pipeline
+cd sma-pipeline
+cp .env.example .env
+for name in POSTGRES_PASSWORD SMA_LOADER_PASSWORD SMA_READER_PASSWORD SMA_APP_PASSWORD \
+            MOCK_API_TOKEN MOCK_ADMIN_TOKEN; do
+  sed -i "s/^$name=$/$name=$(openssl rand -hex 16)/" .env      # в Linux — sed -i без ''
+done
+```
+
+Дальше — те же команды, что выше: `make install`, `make gen-medium`, `make dev`, `make test`.
+
+**Редактор.** VS Code: установить расширение **WSL**, затем в терминале Ubuntu в папке проекта
+выполнить `code .` — VS Code откроет проект внутри Linux, и его терминал тоже будет терминалом
+Ubuntu. Файлы проекта из Проводника Windows: адрес `\\wsl$\Ubuntu-24.04\home\<имя>\sma-pipeline`
+(открывать можно, но редактировать лучше в VS Code с расширением WSL).
+
+**DBeaver и браузер** — обычные Windows-программы: `localhost:5432` (база),
+`localhost:8000` (тестовый API), `localhost:8501` (дашборд Streamlit) из WSL видны в Windows.
+
+**Частые проблемы в Windows**
+
+| Симптом | Что делать |
+|---|---|
+| `docker: command not found` в Ubuntu | Docker Desktop не запущен или не включена интеграция с Ubuntu-24.04 (шаг 2) |
+| `Makefile: *** missing separator` или `$'\r': command not found` | файлы получили окончания строк Windows (CRLF): проект клонирован в Windows, а не в Ubuntu. Клонировать заново в `~` из терминала Ubuntu (шаг 4) |
+| порт 5432 занят | в Windows установлен свой PostgreSQL: остановить службу `postgresql-x64-…` (Win+R → `services.msc`) |
+| все очень медленно | проект лежит на `/mnt/c/...` — перенести в `~` |
+| `python3.12: command not found` | Ubuntu старше 24.04: `wsl --install -d Ubuntu-24.04` (шаг 1) |
+| `make install` падает на `ensurepip` | не установлен `python3.12-venv` (шаг 3) |
+
 ## Команды
 
 | Команда | Что делает |
@@ -103,7 +166,7 @@ make quality       # отчет о качестве данных в reports/
 | `make up` | база, миграции и загрузчик по расписанию (источники — `config/platforms.yaml`) |
 | `make dev` | то же плюс тестовый API; загрузчик берет данные из него |
 | `make db-up` | только база и миграции |
-| `make down` | остановить всё (данные сохраняются) |
+| `make down` | остановить все (данные сохраняются) |
 | `make db-reset` | удалить базу и создать заново (только при разработке!) |
 | `make logs`, `make psql` | журналы сервисов, консоль SQL |
 | `make gen-small` / `gen-medium` / `gen-large` | синтетические наборы в `data/generated/` |

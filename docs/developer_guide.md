@@ -38,6 +38,7 @@
 ## 1. База с данными у себя за 15 минут
 
 Нужны: Docker Desktop (запущенный), Python 3.12, git, make.
+**На Windows** все делается в WSL2 (Ubuntu) — пошагово в разделе «Windows» в README.
 
 ```bash
 git clone <адрес репозитория> sma-pipeline

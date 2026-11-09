@@ -1,0 +1,6 @@
+# Окончания строк — всегда LF, в том числе при клонировании в Windows.
+# С CRLF ломаются Makefile («missing separator») и команды оболочки.
+* text=auto eol=lf
+
+*.dump binary
+*.png binary
