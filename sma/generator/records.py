@@ -1,10 +1,15 @@
-"""Сборка записей API (раздел 6) из смоделированных данных одного экзамена.
+"""Записи API (раздел 6) и их версии во времени для одного экзамена (разделы 10.5–10.7).
 
-Этап M2: один снимок «после проверки» (after_check) — без версий записей во времени
-и без закладки аномалий (они появятся на этапе M6).
+Каждая запись — несколько версий с одним record_id; updated_at версии — момент, когда
+она становится видимой на платформе. Жизненный цикл (раздел 10.6):
+  sessions        started → in_progress → finished (pending) → final → appeal_changed;
+                  absent — одна версия; annulled — в момент аннулирования
+  answers         одна версия в момент ответа
+  expert-reviews  pending (при сдаче) → checked, first → для апелляции: checked, appeal
+  proctoring      одна версия в момент события
 
 Время действий ученика — по местному времени его региона; время действий платформы
-(проверка, обновление итогов, справочники) — по Москве (+03:00).
+(отметка о неявке, итоги, проверка, апелляция, справочники) — по Москве (+03:00).
 """
 
 import uuid
@@ -14,7 +19,7 @@ from datetime import date, datetime, time, timedelta, timezone
 import numpy as np
 
 from sma import contract
-from sma.generator import model
+from sma.generator import anomalies, model
 from sma.generator.exams import (
     OGE_GEOMETRY_MIN,
     ExamConfig,
@@ -27,6 +32,7 @@ from sma.generator.exams import (
     vpr_grade,
 )
 from sma.generator.population import Participant, Region, School
+from sma.generator.timeline import snapshot_moments
 from sma.normalize import normalize_answer
 
 MSK = timezone(timedelta(hours=3))
@@ -35,7 +41,7 @@ RECORD_NAMESPACE = uuid.UUID("6f1d3c52-8a7e-4b0e-9a51-2f6c0d9e4b17")  # пост
 EXAM_START = time(10, 0)  # начало по местному времени
 CHECK_START = time(14, 30)  # проверка экспертами по Москве: 14:30–17:30
 CHECK_WINDOW_SEC = 3 * 3600
-SNAPSHOT_TIME = time(18, 30)  # момент снимка after_check по Москве
+APPEAL_DAYS = (2, 5)  # апелляция — через 2–5 дней после проверки
 DICTIONARY_DAYS_BEFORE = 10
 SCALE_DAYS_BEFORE = 4
 
@@ -45,17 +51,18 @@ COUNTED_EVENT_PROBS = (0.55, 0.15, 0.15, 0.15)
 TIME_SPENT_NULL_RATE = 0.04
 PROCTORING_TASK_NULL_RATE = 0.2
 TERM_MARK_NULL_RATE = 0.10
+FACT_ENDPOINTS = ("sessions", "answers", "expert-reviews", "proctoring-events")
 
 
 @dataclass
 class ExamResult:
-    """Все записи одного экзамена и его время."""
+    """Все версии записей одного экзамена и его время."""
 
-    records: dict[str, list[dict]]  # адрес → записи
-    live_status: dict
+    versions: dict[str, list[dict]]  # адрес → версии всех записей
     exam_start: datetime
     exam_end: datetime
-    snapshot_at: datetime
+    moments: dict[str, datetime]  # моменты снимков (timeline.SNAPSHOTS)
+    appeals: list[str]  # участники с изменением после апелляции
 
 
 def make_record_id(exam_type: str, endpoint: str, key: str) -> str:
@@ -89,7 +96,7 @@ def build_record(
         record[name] = iso(value) if isinstance(value, datetime) else value
     if block is not None:
         key, block_values = block
-        record[key] = block_values
+        record[key] = dict(block_values)
     record["updated_at"] = iso(updated_at)
     record["deleted"] = False
     return record
@@ -108,12 +115,17 @@ def at_msk(day: date, moment: time) -> datetime:
     return datetime.combine(day, moment, tzinfo=MSK)
 
 
-def choose_statuses(rng: np.random.Generator, n: int, rates: dict) -> list[str]:
-    """Статус каждого участника: ровно round(доля × n) absent и annulled, остальные finished."""
+def choose_statuses(
+    rng: np.random.Generator, n: int, rates: dict, protected: set[int]
+) -> list[str]:
+    """Ровно round(доля × n) absent и annulled среди незащищенных участников."""
     n_absent = round(rates["absent"] * n)
     n_annulled = round(rates["annulled"] * n)
+    candidates = [index for index in range(n) if index not in protected]
+    if n_absent + n_annulled > len(candidates):
+        raise anomalies.PlantingError("слишком мало участников без закладок")
     statuses = ["finished"] * n
-    chosen = rng.choice(n, size=n_absent + n_annulled, replace=False)
+    chosen = rng.choice(candidates, size=n_absent + n_annulled, replace=False)
     for k, index in enumerate(chosen):
         statuses[int(index)] = "absent" if k < n_absent else "annulled"
     return statuses
@@ -125,56 +137,92 @@ def empty_block(exam: ExamConfig) -> dict:
     return {field.name: None for field in contract.EXAM_BLOCK_FIELDS[key]}
 
 
-def result_block(
-    rng: np.random.Generator,
-    exam: ExamConfig,
-    primary: int,
-    task_scores: dict[int, int],
-    theta: float,
-) -> dict:
+def block_extras(rng: np.random.Generator, exam: ExamConfig, theta: float) -> dict:
+    """Значения блока, не зависящие от баллов: отметка за четверть ВПР, анкета НИКО."""
+    if exam.exam_type == "VPR":
+        if rng.random() < TERM_MARK_NULL_RATE:
+            return {"term_mark": None}
+        return {"term_mark": int(np.clip(round(3.5 + 0.8 * theta), 2, 5))}
+    if exam.exam_type == "NIKO":
+        u = rng.random()
+        return {"questionnaire_done": True if u < 0.88 else (False if u < 0.95 else None)}
+    return {}
+
+
+def result_block(exam: ExamConfig, primary: int, task_scores: dict[int, int], extras: dict) -> dict:
     """Блок экзамена с итогами по шкале (ключи — в порядке контракта)."""
+    values = dict(extras)
     if exam.exam_type == "EGE":
-        values = {"test_score": ege_test_score(primary)}
+        values["test_score"] = ege_test_score(primary)
     elif exam.exam_type == "OGE":
         sums = {block: sum(task_scores[t] for t in tasks) for block, tasks in exam.blocks.items()}
-        values = {
-            "grade": oge_grade(primary, sums["geometry"]),
-            "block_scores": sums,
-            "block_failed": sums["geometry"] < OGE_GEOMETRY_MIN,
-        }
+        values.update(
+            grade=oge_grade(primary, sums["geometry"]),
+            block_scores=sums,
+            block_failed=sums["geometry"] < OGE_GEOMETRY_MIN,
+        )
     elif exam.exam_type == "VPR":
-        term_mark = None
-        if rng.random() >= TERM_MARK_NULL_RATE:
-            term_mark = int(np.clip(round(3.5 + 0.8 * theta), 2, 5))
-        values = {"grade": vpr_grade(primary), "term_mark": term_mark}
+        values["grade"] = vpr_grade(primary)
     else:
-        u = rng.random()
-        done = True if u < 0.88 else (False if u < 0.95 else None)
-        values = {"result_level": niko_level(primary), "questionnaire_done": done}
+        values["result_level"] = niko_level(primary)
     return {name: values[name] for name in empty_block(exam)}
 
 
-def participant_records(
+def answer_texts(
+    rng: np.random.Generator,
+    exam: ExamConfig,
+    participants: list[Participant],
+    correct: np.ndarray,
+    difficulty: np.ndarray,
+    bank: dict[tuple[str, int], TaskAnswers],
+    empty_base: float,
+) -> list[list[str]]:
+    """Строки ответов части 1 «как ввел ученик» для всех участников и заданий."""
+    texts = []
+    for i, participant in enumerate(participants):
+        row = []
+        for k, task in enumerate(exam.part1_numbers):
+            answers = bank[(participant.variant_id, task)]
+            if correct[i, k]:
+                row.append(model.typed_correct(rng, answers))
+            else:
+                row.append(model.wrong_answer(rng, float(difficulty[k]), answers, empty_base))
+        texts.append(row)
+    return texts
+
+
+def proctoring_types(rng: np.random.Generator, counted: int | None, decoy: bool) -> list[str]:
+    """Типы событий участника: обычно focus_lost ~ Poisson(0,5) и засчитываемых ≤ 2.
+
+    counted — заложенное число засчитываемых (А3); decoy — ловушка (5 focus_lost, 2 tab_switch).
+    """
+    if decoy:
+        return ["focus_lost"] * 5 + ["tab_switch"] * 2
+    n_focus = int(rng.poisson(0.5))
+    n_counted = counted if counted is not None else min(2, int(rng.poisson(0.12)))
+    chosen = rng.choice(COUNTED_EVENTS, size=n_counted, p=COUNTED_EVENT_PROBS)
+    return ["focus_lost"] * n_focus + [str(event) for event in chosen]
+
+
+def participant_versions(
     rng: np.random.Generator,
     exam: ExamConfig,
     participant: Participant,
     region: Region,
     status: str,
-    theta: float,
-    correct: np.ndarray,
+    texts: list[str],
     part2_scores: np.ndarray,
-    part1_difficulty: np.ndarray,
+    extras: dict,
     bank: dict[tuple[str, int], TaskAnswers],
-    empty_base: float,
+    appeal: bool,
+    counted_events: int | None,
+    focus_decoy: bool,
 ) -> dict[str, list[dict]]:
-    """Записи одного участника: сессия, ответы, оценки экспертов, события прокторинга."""
+    """Все версии записей одного участника: сессия, ответы, оценки, события."""
     pid = participant.participant_id
-    out: dict[str, list[dict]] = {
-        "sessions": [],
-        "answers": [],
-        "expert-reviews": [],
-        "proctoring-events": [],
-    }
+    out: dict[str, list[dict]] = {endpoint: [] for endpoint in FACT_ENDPOINTS}
+    block_key = contract.EXAM_BLOCK_KEYS[exam.exam_type]
+    session_id = make_record_id(exam.exam_type, "sessions", pid)
     session = {
         "participant_id": pid,
         "exam_type": exam.exam_type,
@@ -189,17 +237,19 @@ def participant_records(
         "finished_at": None,
         "primary_score": None,
         "max_primary_score": exam.max_primary_score,
-        "result_status": "final",
+        "result_status": "pending",
     }
-    block_key = contract.EXAM_BLOCK_KEYS[exam.exam_type]
-    session_id = make_record_id(exam.exam_type, "sessions", pid)
+
+    def session_version(moment: datetime, block: dict | None = None, **changes) -> None:
+        session.update(changes)
+        values = (block_key, block if block is not None else empty_block(exam))
+        out["sessions"].append(
+            build_record("sessions", session_id, session, moment.astimezone(MSK), values)
+        )
 
     if status == "absent":
-        marked = scheduled_start(exam, region).astimezone(MSK)
-        marked += timedelta(minutes=int(rng.integers(1, 31)))
-        out["sessions"].append(
-            build_record("sessions", session_id, session, marked, (block_key, empty_block(exam)))
-        )
+        marked = scheduled_start(exam, region) + timedelta(minutes=int(rng.integers(1, 31)))
+        session_version(marked, status="absent", result_status="final")
         return out
 
     start = scheduled_start(exam, region)
@@ -210,18 +260,16 @@ def participant_records(
     stop_sec = work_sec if status == "finished" else int(rng.uniform(0.2, 0.8) * work_sec)
 
     # Ответы части 1.
-    task_scores = {}
+    task_scores: dict[int, int] = {}
     for k, task in enumerate(exam.part1_numbers):
         if offsets[k] > stop_sec:
             break
+        text = texts[k]
         answers = bank[(participant.variant_id, task)]
-        if correct[k]:
-            text = model.typed_correct(rng, answers)
-        else:
-            text = model.wrong_answer(rng, float(part1_difficulty[k]), answers, empty_base)
         is_correct = text != "" and normalize_answer(text) == answers.correct
         task_scores[task] = int(is_correct)
         spent = None if rng.random() < TIME_SPENT_NULL_RATE else int(round(float(part1_sec[k])))
+        answered_at = start + timedelta(seconds=int(offsets[k]))
         values = {
             "participant_id": pid,
             "exam_type": exam.exam_type,
@@ -230,20 +278,16 @@ def participant_records(
             "is_correct": is_correct,
             "score": int(is_correct),
             "max_score": 1,
-            "answered_at": start + timedelta(seconds=int(offsets[k])),
+            "answered_at": answered_at,
             "time_spent_sec": spent,
             "audio_plays": None,
         }
-        answered_at = values["answered_at"]
         record_id = make_record_id(exam.exam_type, "answers", f"{pid}/{task}")
         out["answers"].append(build_record("answers", record_id, values, answered_at))
 
     # События прокторинга.
     if exam.has_proctoring:
-        n_focus = int(rng.poisson(0.5))
-        n_counted = min(2, int(rng.poisson(0.12)))
-        counted = rng.choice(COUNTED_EVENTS, size=n_counted, p=COUNTED_EVENT_PROBS)
-        event_types = ["focus_lost"] * n_focus + [str(event) for event in counted]
+        event_types = proctoring_types(rng, counted_events, focus_decoy)
         seconds = rng.integers(0, stop_sec + 1, size=len(event_types))
         for number, k in enumerate(np.argsort(seconds, kind="stable")):
             moment_sec = int(seconds[k])
@@ -267,45 +311,84 @@ def participant_records(
                 build_record("proctoring-events", record_id, values, occurred_at)
             )
 
+    # Сессия: начало, первый ответ, конец.
+    session_version(start, status="started", started_at=start)
+    first_answer = start + timedelta(seconds=int(offsets[0]) if task_scores else 60)
+    if first_answer <= start + timedelta(seconds=stop_sec):
+        session_version(first_answer, status="in_progress")
     if status == "annulled":
-        session["started_at"] = start
-        annulled_at = (start + timedelta(seconds=stop_sec)).astimezone(MSK)
-        out["sessions"].append(
-            build_record(
-                "sessions", session_id, session, annulled_at, (block_key, empty_block(exam))
-            )
+        session_version(
+            start + timedelta(seconds=stop_sec), status="annulled", result_status="final"
         )
         return out
+    finished_at = start + timedelta(seconds=work_sec)
+    session_version(finished_at, status="finished", finished_at=finished_at)
 
-    # Оценки экспертов (часть 2) — только для сданных работ.
+    # Оценки экспертов: pending при сдаче → checked после проверки.
     check_start = at_msk(exam.exam_date, CHECK_START)
-    reviewed_times = []
+    reviews = []
     for k, task in enumerate(exam.part2_numbers):
-        reviewed_at = check_start + timedelta(seconds=int(rng.integers(0, CHECK_WINDOW_SEC + 1)))
-        reviewed_times.append(reviewed_at)
-        task_scores[task] = int(part2_scores[k])
-        values = {
+        record_id = make_record_id(exam.exam_type, "expert-reviews", f"{pid}/{task}")
+        review = {
             "participant_id": pid,
             "exam_type": exam.exam_type,
             "task_number": task,
-            "check_status": "checked",
-            "check_stage": "first",
-            "expert_code": str(rng.choice(EXPERT_CODES)),
-            "score": int(part2_scores[k]),
+            "check_status": "pending",
+            "check_stage": None,
+            "expert_code": None,
+            "score": None,
             "max_score": exam.part2_max_scores[task],
-            "reviewed_at": reviewed_at,
+            "reviewed_at": None,
         }
-        record_id = make_record_id(exam.exam_type, "expert-reviews", f"{pid}/{task}")
-        out["expert-reviews"].append(build_record("expert-reviews", record_id, values, reviewed_at))
+        out["expert-reviews"].append(
+            build_record("expert-reviews", record_id, review, finished_at.astimezone(MSK))
+        )
+        reviewed_at = check_start + timedelta(seconds=int(rng.integers(0, CHECK_WINDOW_SEC + 1)))
+        review.update(
+            check_status="checked",
+            check_stage="first",
+            expert_code=str(rng.choice(EXPERT_CODES)),
+            score=int(part2_scores[k]),
+            reviewed_at=reviewed_at,
+        )
+        out["expert-reviews"].append(build_record("expert-reviews", record_id, review, reviewed_at))
+        reviews.append((record_id, review))
+        task_scores[task] = int(part2_scores[k])
 
     primary = sum(task_scores.values())
-    session["started_at"] = start
-    session["finished_at"] = start + timedelta(seconds=work_sec)
-    session["primary_score"] = primary
-    block = result_block(rng, exam, primary, task_scores, theta)
-    final_at = max(reviewed_times) + timedelta(minutes=int(rng.integers(1, 31)))
-    out["sessions"].append(
-        build_record("sessions", session_id, session, final_at, (block_key, block))
+    final_at = max(review["reviewed_at"] for _, review in reviews)
+    final_at += timedelta(minutes=int(rng.integers(1, 31)))
+    session_version(
+        final_at,
+        result_block(exam, primary, task_scores, extras),
+        primary_score=primary,
+        result_status="final",
+    )
+    if not appeal:
+        return out
+
+    # Апелляция: балл за одно задание части 2 меняется на 1.
+    raisable = [k for k, task in enumerate(exam.part2_numbers)
+                if task_scores[task] < exam.part2_max_scores[task]]  # fmt: skip
+    k = int(rng.choice(raisable)) if raisable else 0
+    task = exam.part2_numbers[k]
+    task_scores[task] += 1 if raisable else -1
+    record_id, review = reviews[k]
+    days = rng.uniform(*APPEAL_DAYS)
+    appeal_at = (review["reviewed_at"] + timedelta(days=float(days))).replace(microsecond=0)
+    review.update(
+        check_stage="appeal",
+        expert_code=str(rng.choice(EXPERT_CODES)),
+        score=task_scores[task],
+        reviewed_at=appeal_at,
+    )
+    out["expert-reviews"].append(build_record("expert-reviews", record_id, review, appeal_at))
+    primary = sum(task_scores.values())
+    session_version(
+        appeal_at + timedelta(minutes=int(rng.integers(1, 31))),
+        result_block(exam, primary, task_scores, extras),
+        primary_score=primary,
+        result_status="appeal_changed",
     )
     return out
 
@@ -313,61 +396,65 @@ def participant_records(
 def simulate_exam(
     rng: np.random.Generator,
     exam: ExamConfig,
-    participants: list[Participant],
+    plan: anomalies.Plan,
     n_schools: int,
     regions: dict[str, Region],
     bank: dict[tuple[str, int], TaskAnswers],
     rates: dict,
 ) -> ExamResult:
-    """Моделирует один экзамен и собирает записи /sessions, /answers, /expert-reviews,
-    /proctoring-events и сводку /live-status.
+    """Моделирует один экзамен с закладками из plan и собирает версии записей
+    /sessions, /answers, /expert-reviews, /proctoring-events.
     """
+    participants = plan.participants
     n = len(participants)
-    statuses = choose_statuses(rng, n, rates)
+    statuses = choose_statuses(rng, n, rates, plan.protected)
     school_index = np.array([p.school_index for p in participants])
     theta = model.abilities(rng, school_index, n_schools)
+    anomalies.apply_boost(theta, plan)
     part1_difficulty = model.part1_difficulties(rng, exam.part1_tasks)
-    correct = rng.random((n, exam.part1_tasks)) < model.p_correct(theta, part1_difficulty)
+    probabilities = model.p_correct(theta, part1_difficulty)
+    anomalies.apply_p3(probabilities, part1_difficulty, plan)
+    correct = rng.random((n, exam.part1_tasks)) < probabilities
     max2 = np.array([exam.part2_max_scores[task] for task in exam.part2_numbers])
     part2_difficulty = 0.3 + 0.5 * np.arange(len(max2)) + rng.normal(0, 0.2, len(max2))
     part2_scores = model.expert_scores(rng, theta, max2, part2_difficulty)
+    anomalies.apply_p2(correct, part1_difficulty, plan)
+    anomalies.apply_p4(rng, correct, part2_scores, part1_difficulty, max2, exam, plan)
+    texts = answer_texts(
+        rng, exam, participants, correct, part1_difficulty, bank, rates["empty_answer_base"]
+    )
+    anomalies.apply_texts(rng, texts, theta, exam, bank, plan)
 
-    records: dict[str, list[dict]] = {
-        "sessions": [],
-        "answers": [],
-        "expert-reviews": [],
-        "proctoring-events": [],
-    }
+    finished = [i for i in range(n) if statuses[i] == "finished" and i not in plan.protected]
+    n_appeals = min(len(finished), round(rates.get("appeal", 0) * len(finished)))
+    appealed = {int(i) for i in rng.choice(finished, size=n_appeals, replace=False)}
+
+    versions: dict[str, list[dict]] = {endpoint: [] for endpoint in FACT_ENDPOINTS}
     for i, participant in enumerate(participants):
-        one = participant_records(
+        one = participant_versions(
             rng,
             exam,
             participant,
             regions[participant.region_code],
             statuses[i],
-            float(theta[i]),
-            correct[i],
+            texts[i],
             part2_scores[i],
-            part1_difficulty,
+            block_extras(rng, exam, float(theta[i])),
             bank,
-            rates["empty_answer_base"],
+            appeal=i in appealed,
+            counted_events=plan.a3_counts.get(i),
+            focus_decoy=i in plan.focus_decoys,
         )
         for endpoint, items in one.items():
-            records[endpoint].extend(items)
+            versions[endpoint].extend(items)
 
     starts = [scheduled_start(exam, regions[p.region_code]) for p in participants]
-    exam_start = min(starts)
+    exam_start = min(starts).astimezone(MSK)
     exam_end = max(starts) + timedelta(minutes=exam.start_spread_min + exam.duration_min)
-    snapshot_at = at_msk(exam.exam_date, SNAPSHOT_TIME)
-    live_status = {
-        "exam_type": exam.exam_type,
-        "in_progress": 0,
-        "finished": statuses.count("finished"),
-        "annulled": statuses.count("annulled"),
-        "absent": statuses.count("absent"),
-        "generated_at": iso(snapshot_at),
-    }
-    return ExamResult(records, live_status, exam_start, exam_end, snapshot_at)
+    exam_end = exam_end.astimezone(MSK)
+    moments = snapshot_moments(exam.exam_date, exam_start, exam_end, MSK)
+    appeals = sorted(participants[i].participant_id for i in appealed)
+    return ExamResult(versions, exam_start, exam_end, moments, appeals)
 
 
 def dictionary_records(
@@ -377,7 +464,9 @@ def dictionary_records(
     kim: list[dict],
     exam_end: datetime,
 ) -> dict[str, list[dict]]:
-    """Записи справочников одной платформы: regions, schools, subjects, kim, scales."""
+    """Записи справочников одной платформы: regions, schools, subjects (одна версия, видны
+    всегда), kim (видна с конца экзамена) и scales (версия 1 — за 4 дня до экзамена).
+    """
     exam_type = exam.exam_type
     published = at_msk(exam.exam_date - timedelta(days=DICTIONARY_DAYS_BEFORE), time(9, 0))
     scale_from = at_msk(exam.exam_date - timedelta(days=SCALE_DAYS_BEFORE), time(9, 0))
@@ -385,7 +474,7 @@ def dictionary_records(
     def rid(endpoint: str, key: str) -> str:
         return make_record_id(exam_type, endpoint, key)
 
-    out: dict[str, list[dict]] = {
+    return {
         "dictionaries/regions": [
             build_record(
                 "dictionaries/regions",
@@ -450,4 +539,3 @@ def dictionary_records(
             )
         ],
     }
-    return out

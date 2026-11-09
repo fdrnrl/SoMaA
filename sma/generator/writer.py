@@ -47,6 +47,21 @@ def write_endpoint(
     return paths
 
 
+def write_timeline(folder: Path, endpoint: str, versions: list[dict]) -> Path:
+    """timeline/{адрес}.jsonl: все версии записей по порядку появления, одна на строку,
+    с полем visible_from — когда версия становится видимой на платформе (= updated_at).
+    """
+    timeline = folder / "timeline"
+    timeline.mkdir(exist_ok=True)
+    path = timeline / f"{endpoint_file_stem(endpoint)}.jsonl"
+    lines = [
+        json.dumps({**version, "visible_from": version["updated_at"]}, ensure_ascii=False)
+        for version in sorted(versions, key=api_order)
+    ]
+    path.write_text("".join(line + "\n" for line in lines), encoding="utf-8")
+    return path
+
+
 def file_checksums(root: Path) -> dict[str, str]:
     """SHA-256 всех файлов набора (кроме manifest.json): относительный путь → хеш."""
     checksums = {}

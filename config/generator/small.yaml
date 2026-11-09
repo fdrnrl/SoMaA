@@ -1,5 +1,5 @@
 # Профиль small: маленький набор для тестов и первой загрузки (раздел 10.1).
-# Без аномалий и версий во времени — они появятся на этапе M6.
+# Аномалии и ловушки — раздел 10.7; самопроверка эталонными правилами — раздел 10.9.
 
 name: small
 exams: [EGE, OGE, VPR, NIKO]
@@ -23,6 +23,19 @@ room_size_max: 15
 rates:
   absent: 0.03                      # доля не явившихся (берется ровно round(доля × N))
   annulled: 0.02
+  appeal: 0.01                      # доля работ с изменением после апелляции
   empty_answer_base: 0.04           # базовая вероятность пустого ответа (раздел 10.5)
 
-snapshot: after_check               # M2 умеет только этот снимок
+snapshot: after_appeal              # during_exam | after_exam | after_check | after_appeal
+
+# Без А1 и П3–П4: в small школы меньше 10 учеников.
+anomalies:
+  A2: 1
+  A3: 2                             # только на платформах с прокторингом
+  P1: 1
+  P2: 1
+decoys:
+  A2_blank: 1
+  A3_focus: 1
+self_check: true
+max_attempts: 60

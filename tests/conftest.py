@@ -5,6 +5,7 @@
 """
 
 import os
+from pathlib import Path
 
 import psycopg
 import pytest
@@ -31,6 +32,17 @@ def test_database() -> str:
     with connect(dbname=TEST_DB, autocommit=True) as conn:
         apply_migrations(conn)
     return TEST_DB
+
+
+@pytest.fixture(scope="session")
+def medium_dataset(tmp_path_factory):
+    """Набор medium (с аномалиями и самопроверкой) — один на весь запуск тестов: ~45 с."""
+    from sma.generator.generate import generate
+
+    profile = Path(__file__).resolve().parents[1] / "config" / "generator" / "medium.yaml"
+    out = tmp_path_factory.mktemp("medium")
+    generate(profile, out, 2026)
+    return out
 
 
 @pytest.fixture

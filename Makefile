@@ -8,9 +8,11 @@ export SMA_DB_HOST ?= localhost
 
 # Набор генератора для make load-files; другой: make load-files DATA=data/generated/medium
 DATA ?= data/generated/small
+# Скорость воспроизведения экзамена для make mock-replay
+SPEED ?= 10
 
-.PHONY: install up dev db-up down logs psql build migrate db-reset gen-small gen-medium \
-	load-files loader mock-api test lint format cov
+.PHONY: install up dev db-up down logs psql build migrate db-reset gen-small gen-medium gen-large \
+	load-files loader mock-api mock-replay test lint format cov
 
 ## Создать виртуальное окружение и установить зависимости
 install:
@@ -69,6 +71,11 @@ gen-medium:
 	$(PYTHON) -m sma.generator.generate --profile config/generator/medium.yaml \
 		--out data/generated/medium --seed 2026
 
+## Сгенерировать большой набор для нагрузочного теста T-06 в data/generated/large
+gen-large:
+	$(PYTHON) -m sma.generator.generate --profile config/generator/large.yaml \
+		--out data/generated/large --seed 2026
+
 ## Загрузить набор генератора в базу один раз (по умолчанию small)
 load-files:
 	$(PYTHON) -m sma.loader.run --once --data-root $(DATA)
@@ -80,6 +87,11 @@ loader:
 ## Тестовый API на этом компьютере: http://localhost:8000 (сначала make gen-medium)
 mock-api:
 	MOCK_ADMIN=1 $(PYTHON) -m sma.mockapi.server --data data/generated/medium --port 8000
+
+## Тестовый API в режиме воспроизведения экзамена: make mock-replay SPEED=10
+mock-replay:
+	MOCK_ADMIN=1 $(PYTHON) -m sma.mockapi.server --data data/generated/medium --port 8000 \
+		--replay --speed $(SPEED)
 
 ## Тесты. Можно выбрать часть: make test ARGS="tests/unit/test_contract.py -x"
 test:

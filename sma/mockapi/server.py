@@ -26,7 +26,9 @@ from flask import Flask, Response, jsonify, request
 
 from sma import contract
 from sma.contract import INT, STRING
+from sma.generator.timeline import live_status
 from sma.loader.sources import FileSource, api_order, is_after
+from sma.mockapi.timeline import ReplayClock, load_timelines
 from sma.timeutil import parse_datetime, utc_now
 
 logger = logging.getLogger(__name__)
@@ -40,43 +42,85 @@ MODES = ("normal", "down", "slow", "broken_json", "no_wrapper")
 BAD_KINDS = ("missing_field", "pii_field", "wrong_type", "bad_enum")
 
 
-class MockState:
-    """Данные и настройки сервера. Все изменения — под одной блокировкой (сервер многопоточный)."""
+def read_manifest(data_root: Path) -> dict:
+    return json.loads((Path(data_root) / "manifest.json").read_text(encoding="utf-8"))
 
-    def __init__(self, data_root: Path):
+
+def exam_start_of(data_root: Path) -> datetime:
+    """Самое раннее начало экзамена по всем платформам набора — старт часов воспроизведения."""
+    platforms = read_manifest(data_root)["platforms"].values()
+    return min(parse_datetime(info["exam_start"]) for info in platforms)
+
+
+class MockState:
+    """Данные и настройки сервера. Все изменения — под одной блокировкой (сервер многопоточный).
+
+    replay — часы экзамена (режим воспроизведения); без них отдается снимок из файлов.
+    """
+
+    def __init__(self, data_root: Path, replay=None):
         self.data_root = Path(data_root)
+        self.replay = replay
         self.lock = threading.Lock()
         self.reset()
 
     def reset(self) -> None:
         """Исходное состояние: данные из файлов, режим normal, пустой журнал запросов."""
-        manifest = json.loads((self.data_root / "manifest.json").read_text(encoding="utf-8"))
+        manifest = read_manifest(self.data_root)
         records: dict[str, dict[str, dict[str, dict]]] = {}
+        timelines: dict[str, dict] = {}
         live: dict[str, dict] = {}
         exam_end: dict[str, datetime] = {}
         clock: dict[str, datetime] = {}
-        for info in manifest["platforms"].values():
+        for exam_type, info in manifest["platforms"].items():
             platform = info["folder"]
             source = FileSource(self.data_root / platform)
             records[platform] = {
                 endpoint: {item["record_id"]: item for item in source.read_items(endpoint)}
                 for endpoint in LIST_ENDPOINTS
             }
+            if self.replay is not None:
+                timelines[platform] = load_timelines(self.data_root / platform)
             live[platform] = source.read_live_status()
+            live[platform]["exam_type"] = exam_type
             exam_end[platform] = parse_datetime(info["exam_end"])
             clock[platform] = parse_datetime(info["snapshot_at"])
         with self.lock:
             self.records = records
+            self.timelines = timelines
             self.live = live
             self.exam_end = exam_end
-            self.clock = clock  # «текущее время» платформы: в снимке — момент снимка
+            self.clock = clock  # «текущее время» платформы в режиме снимка — момент снимка
+            self.injected = {platform: {e: {} for e in LIST_ENDPOINTS} for platform in records}
             self.modes = {platform: {"mode": "normal", "delay_sec": 0.0} for platform in records}
             self.requests: list[dict] = []
-            self.injected = 0
+            self.bad_count = 0
             self.generation = getattr(self, "generation", 0) + 1  # номер «эпохи» после reset
 
     def platform_now(self, platform: str) -> datetime:
+        """«Текущее время» платформы: часы воспроизведения или момент снимка."""
+        if self.replay is not None:
+            return self.replay.now()
         return self.clock[platform]
+
+    def items(self, platform: str, endpoint: str) -> list[dict]:
+        """Записи адреса, видимые сейчас, плюс добавленные через /_admin/inject."""
+        timeline = self.timelines.get(platform, {}).get(endpoint)
+        if timeline is not None:
+            visible = timeline.visible(self.platform_now(platform))
+        else:
+            visible = self.records[platform][endpoint]
+        with self.lock:
+            return list({**visible, **self.injected[platform][endpoint]}.values())
+
+    def live_status(self, platform: str) -> dict:
+        """/live-status: из файла снимка или — при воспроизведении — по видимым сессиям."""
+        if self.replay is None:
+            with self.lock:
+                return dict(self.live[platform])
+        moment = self.platform_now(platform)
+        sessions = self.items(platform, "sessions")
+        return live_status(self.live[platform]["exam_type"], sessions, moment)
 
 
 def error(status: int, message: str) -> Response:
@@ -145,8 +189,13 @@ def create_app(
     token: str,
     admin_enabled: bool = False,
     admin_token: str | None = None,
+    replay=None,
 ) -> Flask:
-    """Создает приложение тестового API по набору генератора в data_root."""
+    """Создает приложение тестового API по набору генератора в data_root.
+
+    replay — часы экзамена (ReplayClock или любой объект с методом now()): включают режим
+    воспроизведения по timeline/*.jsonl. Без них сервер отдает снимок из файлов.
+    """
     if not token:
         raise ValueError("Не задан токен тестового API (MOCK_API_TOKEN)")
     if admin_enabled and not admin_token:
@@ -155,7 +204,7 @@ def create_app(
     app = Flask(__name__)
     app.json.sort_keys = False  # ключи — в порядке контракта
     app.json.ensure_ascii = False
-    state = MockState(data_root)
+    state = MockState(data_root, replay)
     app.config["MOCK_STATE"] = state
 
     def log_request(
@@ -211,17 +260,15 @@ def create_app(
             return Response('{"page": 1, "items": [', status=200, mimetype="application/json")
 
         if endpoint == LIVE_STATUS:
-            with state.lock:
-                return jsonify(state.live[platform])
+            return jsonify(state.live_status(platform))
 
         try:
             since, page, limit = parse_params(endpoint)
         except ValueError as problem:
             return error(400, str(problem))
 
-        with state.lock:
-            items = list(state.records[platform][endpoint].values())
-            exam_finished = state.platform_now(platform) >= state.exam_end[platform]
+        items = state.items(platform, endpoint)
+        exam_finished = state.platform_now(platform) >= state.exam_end[platform]
         if endpoint == "dictionaries/kim" and not exam_finished:
             items = []  # структура КИМ — только после окончания экзамена (6.10)
         if since is not None:
@@ -271,7 +318,7 @@ def register_admin(app: Flask, state: MockState, admin_token: str) -> None:
         if not isinstance(record, dict) or not isinstance(record.get("record_id"), str):
             return error(400, "нужна запись record с record_id")
         with state.lock:
-            state.records[platform][endpoint][record["record_id"]] = record
+            state.injected[platform][endpoint][record["record_id"]] = record
         return jsonify({"record_id": record["record_id"]})
 
     @app.post("/_admin/inject_bad")
@@ -280,23 +327,25 @@ def register_admin(app: Flask, state: MockState, admin_token: str) -> None:
         platform, endpoint, kind = data.get("platform"), data.get("endpoint"), data.get("kind")
         if platform not in state.records or endpoint not in LIST_ENDPOINTS or kind not in BAD_KINDS:
             return error(400, f"нужны platform, endpoint и kind из {list(BAD_KINDS)}")
+        existing = state.items(platform, endpoint)
+        if not existing:
+            return error(400, f"у {endpoint} нет записей, которые можно испортить")
+        template = max(existing, key=api_order)
+        newest = parse_datetime(template["updated_at"])
         with state.lock:
-            existing = list(state.records[platform][endpoint].values())
-            if not existing:
-                return error(400, f"у {endpoint} нет записей, которые можно испортить")
-            template = max(existing, key=api_order)
-            newest = parse_datetime(template["updated_at"])
-            state.injected += 1
-            template = {
-                **template,
-                "record_id": f"bad-{kind}-{state.injected}",
-                "updated_at": (newest + timedelta(seconds=state.injected)).isoformat(),
-            }
-            try:
-                record, field = make_bad_record(template, endpoint, kind, data.get("key", "email"))
-            except ValueError as problem:
-                return error(400, str(problem))
-            state.records[platform][endpoint][record["record_id"]] = record
+            state.bad_count += 1
+            number = state.bad_count
+        template = {
+            **template,
+            "record_id": f"bad-{kind}-{number}",
+            "updated_at": (newest + timedelta(seconds=number)).isoformat(),
+        }
+        try:
+            record, field = make_bad_record(template, endpoint, kind, data.get("key", "email"))
+        except ValueError as problem:
+            return error(400, str(problem))
+        with state.lock:
+            state.injected[platform][endpoint][record["record_id"]] = record
         return jsonify({"record_id": record["record_id"], "field": field, "record": record})
 
     @app.get("/_admin/requests")
@@ -315,15 +364,25 @@ def main() -> None:
     parser.add_argument("--data", required=True, type=Path, help="папка набора генератора")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
+    parser.add_argument("--replay", action="store_true", help="воспроизводить экзамен по timeline")
+    parser.add_argument("--speed", type=float, default=1.0, help="во сколько раз быстрее реального")
+    parser.add_argument(
+        "--start-offset", type=float, default=0, help="с какой секунды экзамена начать"
+    )
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
     load_dotenv()
 
+    replay = None
+    if args.replay:
+        replay = ReplayClock(exam_start_of(args.data), args.speed, args.start_offset)
+        logger.info("Воспроизведение: с %s, скорость ×%g", replay.now().isoformat(), args.speed)
     app = create_app(
         args.data,
         token=os.environ.get("MOCK_API_TOKEN", ""),
         admin_enabled=os.environ.get("MOCK_ADMIN", "0") == "1",
         admin_token=os.environ.get("MOCK_ADMIN_TOKEN"),
+        replay=replay,
     )
     logger.info("Тестовый API: http://%s:%d, данные %s", args.host, args.port, args.data)
     app.run(host=args.host, port=args.port, threaded=True)

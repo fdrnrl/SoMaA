@@ -1,5 +1,5 @@
 # Профиль medium: основной набор для разработки витрин (раздел 10.1).
-# Пока без аномалий и версий во времени — они появятся на этапе M6.
+# Аномалии и ловушки — раздел 10.7; самопроверка эталонными правилами — раздел 10.9.
 
 name: medium
 exams: [EGE, OGE, VPR, NIKO]
@@ -23,6 +23,22 @@ room_size_max: 15
 rates:
   absent: 0.03
   annulled: 0.02
+  appeal: 0.01
   empty_answer_base: 0.04
 
-snapshot: after_check
+snapshot: after_appeal
+
+anomalies:
+  A1: 1                             # школ на экзамен
+  A2: 1                             # групп
+  A3: 2                             # участников (только если есть прокторинг)
+  P1: 1                             # групп в аудитории
+  P2: 1                             # участников
+  P3: 1                             # школ
+  P4a: 1
+  P4b: 1
+decoys:
+  A2_blank: 1
+  A3_focus: 1
+self_check: true
+max_attempts: 60

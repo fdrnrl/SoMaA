@@ -2,20 +2,17 @@
 
 import json
 import time
-from pathlib import Path
 
 import pandas as pd
 import psycopg
 import pytest
 
 from sma.db import connect
-from sma.generator.generate import generate
 from sma.loader import store
 from sma.loader.cycle import LoaderSettings, run_cycle
 from sma.loader.sources import FileSource
 from tests.conftest import LOADER_TABLES
 
-MEDIUM = Path(__file__).resolve().parents[2] / "config" / "generator" / "medium.yaml"
 EXAMS = ["EGE", "OGE", "VPR", "NIKO"]
 VIEWS = [
     "sessions_current",
@@ -37,10 +34,9 @@ FINISHED = "status = 'finished' AND result_status <> 'pending'"
 
 
 @pytest.fixture(scope="module")
-def medium_db(test_database, tmp_path_factory):
+def medium_db(test_database, medium_dataset):
     """sma_test с загруженным набором medium и обновленными витринами (один раз на модуль)."""
-    dataset = tmp_path_factory.mktemp("medium")
-    generate(MEDIUM, dataset, 2026)
+    dataset = medium_dataset
     with connect(dbname=test_database) as conn:
         conn.execute(f"TRUNCATE {LOADER_TABLES} RESTART IDENTITY CASCADE")
         conn.commit()

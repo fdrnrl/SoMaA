@@ -1,0 +1,34 @@
+# Профиль large для нагрузочного теста T-06 (раздел 10.1): 400 участников на экзамен,
+# 20 регионов, 100 школ, 200 аудиторий. Аномалии по умолчанию не закладываются.
+
+name: large
+exams: [EGE, OGE, VPR, NIKO]
+participants_per_exam: 400
+variants_per_exam: 2
+
+regions:
+  dictionary_count: 20
+  used_count: 20
+  big_regions: 0
+  schools_per_big_region: 10
+
+schools:
+  dictionary_count: 120
+  used_count: 100
+  size_min: 4
+  size_max: 4
+
+room_size_max: 2                    # 100 школ × 2 аудитории = 200 аудиторий
+
+rates:
+  absent: 0.03
+  annulled: 0.02
+  appeal: 0.01
+  empty_answer_base: 0.04
+
+snapshot: after_appeal
+
+anomalies: {}
+decoys: {}
+self_check: false
+max_attempts: 1
