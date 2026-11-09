@@ -1,4 +1,7 @@
-# Сервисы СМА. Сейчас (M1) база и миграции; loader, mock-api, backup добавляются на следующих этапах.
+# Сервисы СМА (раздел 15.1).
+#   make up   — db, migrate, loader
+#   make dev  — то же плюс mock-api; загрузчик берет данные из mock-api
+# Сервис backup (профиль exam) появится на этапе M7.
 
 services:
   db:
@@ -27,6 +30,39 @@ services:
     depends_on:
       db:
         condition: service_healthy
+
+  # Загрузчик по расписанию. Конфиг платформ — SMA_LOADER_CONFIG (make dev ставит mock).
+  loader:
+    build: .
+    image: sma-pipeline
+    command: python -m sma.loader.run
+    env_file: .env
+    environment:
+      SMA_PLATFORMS_CONFIG: ${SMA_LOADER_CONFIG:-config/platforms.yaml}
+    volumes:
+      - ./data:/app/data:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    stop_grace_period: 40s       # дождаться конца текущей страницы (таймаут запроса — 30 с)
+
+  # Тестовый API платформ по набору генератора (сначала make gen-medium).
+  mock-api:
+    build: .
+    image: sma-pipeline
+    profiles: [dev]
+    command: >
+      python -m sma.mockapi.server --host 0.0.0.0 --port 8000
+      --data data/generated/${MOCK_DATA:-medium}
+    env_file: .env
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ./data:/app/data:ro
+    restart: unless-stopped
 
 volumes:
   pgdata:

@@ -248,3 +248,43 @@ def test_loader_role_has_enough_rights(loader_db, small_dataset):
     loader_db.commit()
     results = run_cycle(loader_db, FileSource(small_dataset / "vpr"), "VPR", SETTINGS)
     assert [r.endpoint for r in results if r.status != "ok"] == []
+
+
+def test_parallel_dictionary_upserts_do_not_deadlock(test_database, loader_db):
+    """Потоки платформ одновременно пишут одни и те же школы в разном порядке.
+
+    Раньше это давало deadlock (нашли при 10-минутном прогоне с mock-api): каждый поток
+    блокировал строки в своем порядке. Теперь upsert_rows сортирует строки по ключу.
+    """
+    import threading
+
+    from sma.db import connect
+
+    moment = datetime(2026, 11, 25, 6, 0, tzinfo=UTC)
+    rows = [
+        {"school_code": f"77{k:03d}", "region_code": "77", "name": f"Школа № {k}",
+         "updated_at": moment, "load_id": None}
+        for k in range(1, 201)
+    ]  # fmt: skip
+    errors: list[Exception] = []
+
+    def writer(ordered: list[dict]) -> None:
+        with connect(dbname=test_database) as conn:
+            for _ in range(20):
+                try:
+                    store.upsert_rows(conn, "dictionaries/schools", ordered)
+                    conn.commit()
+                except Exception as error:  # noqa: BLE001 — собираем любую ошибку потока
+                    conn.rollback()
+                    errors.append(error)
+
+    threads = [
+        threading.Thread(target=writer, args=(rows,)),
+        threading.Thread(target=writer, args=(list(reversed(rows)),)),
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert errors == []
+    assert count(loader_db, "core.schools") == 200

@@ -1,0 +1,35 @@
+# Загрузчик и тестовый API в docker-compose (make dev): все платформы — через mock-api.
+# Локально, без Docker: python -m sma.loader.run --config config/platforms.mock.yaml \
+#     --api-root http://localhost:8000
+
+platforms:
+  - exam_type: EGE
+    source: api
+    base_url: http://mock-api:8000/ege
+    token_env: MOCK_API_TOKEN
+    enabled: true
+  - exam_type: OGE
+    source: api
+    base_url: http://mock-api:8000/oge
+    token_env: MOCK_API_TOKEN
+    enabled: true
+  - exam_type: VPR
+    source: api
+    base_url: http://mock-api:8000/vpr
+    token_env: MOCK_API_TOKEN
+    enabled: true
+  - exam_type: NIKO
+    source: api
+    base_url: http://mock-api:8000/niko
+    token_env: MOCK_API_TOKEN
+    enabled: true
+
+intervals_sec:
+  facts: 60
+  live_status: 30
+  kim_scales: 600
+  dictionaries: 3600
+min_gap_per_endpoint_sec: 10
+request_timeout_sec: 30
+since_overlap_sec: 5
+initial_since: "1970-01-01T00:00:00+00:00"

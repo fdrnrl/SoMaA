@@ -9,8 +9,8 @@ export SMA_DB_HOST ?= localhost
 # Набор генератора для make load-files; другой: make load-files DATA=data/generated/medium
 DATA ?= data/generated/small
 
-.PHONY: install up down logs psql build migrate db-reset gen-small gen-medium load-files \
-	test lint format cov
+.PHONY: install up dev db-up down logs psql build migrate db-reset gen-small gen-medium \
+	load-files loader mock-api test lint format cov
 
 ## Создать виртуальное окружение и установить зависимости
 install:
@@ -18,14 +18,25 @@ install:
 	$(PYTHON) -m pip install --upgrade pip
 	$(PYTHON) -m pip install -r requirements.txt
 
-## Поднять базу и применить миграции (сервис migrate)
+## База + миграции + загрузчик по расписанию (источники из config/platforms.yaml)
 up:
+	docker compose up -d --build loader
+	docker compose ps
+
+## То же плюс тестовый API; загрузчик берет данные из mock-api (сначала make gen-medium)
+dev:
+	SMA_LOADER_CONFIG=config/platforms.mock.yaml docker compose --profile dev up -d --build \
+		loader mock-api
+	docker compose --profile dev ps
+
+## Только база и миграции, без загрузчика (для тестов и make load-files)
+db-up:
 	docker compose up -d --build --wait db
 	docker compose run --rm --build migrate
 
-## Остановить сервисы (данные базы сохраняются в томе pgdata)
+## Остановить все сервисы (данные базы сохраняются в томе pgdata)
 down:
-	docker compose down
+	docker compose --profile dev down
 
 ## Журнал сервисов
 logs:
@@ -45,8 +56,8 @@ migrate:
 
 ## Удалить рабочую базу со всеми данными и создать заново (только при разработке!)
 db-reset:
-	docker compose down -v
-	$(MAKE) up
+	docker compose --profile dev down -v
+	$(MAKE) db-up
 
 ## Сгенерировать маленький набор синтетических данных в data/generated/small
 gen-small:
@@ -61,6 +72,14 @@ gen-medium:
 ## Загрузить набор генератора в базу один раз (по умолчанию small)
 load-files:
 	$(PYTHON) -m sma.loader.run --once --data-root $(DATA)
+
+## Загрузчик по расписанию на этом компьютере (Ctrl+C — остановка)
+loader:
+	$(PYTHON) -m sma.loader.run
+
+## Тестовый API на этом компьютере: http://localhost:8000 (сначала make gen-medium)
+mock-api:
+	MOCK_ADMIN=1 $(PYTHON) -m sma.mockapi.server --data data/generated/medium --port 8000
 
 ## Тесты. Можно выбрать часть: make test ARGS="tests/unit/test_contract.py -x"
 test:

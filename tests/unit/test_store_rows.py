@@ -48,7 +48,15 @@ def test_newest_per_key_keeps_latest_version():
     old = {"exam_type": "OGE", "record_id": "r", "updated_at": datetime(2026, 1, 1, tzinfo=UTC)}
     new = {**old, "updated_at": datetime(2026, 1, 2, tzinfo=UTC)}
     other = {**old, "record_id": "q"}
-    assert newest_per_key([new, old, other], ["exam_type", "record_id"]) == [new, other]
+    assert newest_per_key([new, old, other], ["exam_type", "record_id"]) == [other, new]
+
+
+def test_newest_per_key_sorts_by_key():
+    """Один порядок строк во всех потоках — защита от взаимных блокировок."""
+    moment = datetime(2026, 1, 1, tzinfo=UTC)
+    rows = [{"region_code": code, "updated_at": moment} for code in ("77", "02", "54", "16")]
+    result = newest_per_key(rows, ["region_code"])
+    assert [row["region_code"] for row in result] == ["02", "16", "54", "77"]
 
 
 def test_upsert_query_protects_newer_version():

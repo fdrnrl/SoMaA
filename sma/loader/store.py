@@ -106,15 +106,21 @@ def upsert_query(table: str, columns: list[str], key: list[str]) -> sql.Composed
 
 
 def newest_per_key(rows: list[dict], key: list[str]) -> list[dict]:
-    """Если в пакете одна запись встречается несколько раз — оставить версию с наибольшим
+    """Одна строка на ключ, отсортированные по ключу.
+
+    Если в пакете одна запись встречается несколько раз — остается версия с наибольшим
     updated_at (один INSERT ... ON CONFLICT не может изменить строку дважды).
+
+    Сортировка по ключу нужна против взаимных блокировок (deadlock): потоки разных платформ
+    одновременно пишут одни и те же строки общих справочников, и если каждый блокирует их
+    в своем порядке, они ждут друг друга вечно. В одном порядке второй поток просто ждет первого.
     """
     newest: dict[tuple, dict] = {}
     for row in rows:
         row_key = tuple(row[column] for column in key)
         if row_key not in newest or row["updated_at"] >= newest[row_key]["updated_at"]:
             newest[row_key] = row
-    return list(newest.values())
+    return [newest[row_key] for row_key in sorted(newest)]
 
 
 def upsert_rows(conn: Connection, endpoint: str, rows: list[dict]) -> tuple[int, int]:

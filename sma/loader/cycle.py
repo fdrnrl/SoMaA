@@ -10,6 +10,7 @@
 """
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -29,6 +30,8 @@ KIM_SCALES = ("dictionaries/kim", "dictionaries/scales")
 LIVE_STATUS = "live-status"
 # Порядок в цикле: сначала справочники, потом факты, КИМ и шкалы, последней — сводка.
 ALL_ENDPOINTS = FULL_DICTIONARIES + FACT_ENDPOINTS + KIM_SCALES + (LIVE_STATUS,)
+
+StopCheck = Callable[[], bool]  # функция «пора остановиться?»
 
 
 @dataclass
@@ -99,9 +102,19 @@ def fail(
 
 
 def load_list_endpoint(
-    conn: Connection, source: Source, platform: str, endpoint: str, settings: LoaderSettings
+    conn: Connection,
+    source: Source,
+    platform: str,
+    endpoint: str,
+    settings: LoaderSettings,
+    should_stop: StopCheck | None = None,
 ) -> EndpointResult:
-    """Загружает списочный адрес: все страницы, проверка, upsert, журнал, водяной знак."""
+    """Загружает списочный адрес: все страницы, проверка, upsert, журнал, водяной знак.
+
+    should_stop проверяется перед каждой следующей страницей: при остановке загрузчика
+    уже записанные страницы остаются, водяной знак не сдвигается, и после перезапуска
+    адрес догружается с того же места (NFR-14).
+    """
     full = endpoint in FULL_DICTIONARIES
     since = None if full else since_for(store.get_watermark(conn, platform, endpoint), settings)
     load_id = store.start_load(conn, platform, endpoint, since)
@@ -113,6 +126,10 @@ def load_list_endpoint(
     try:
         page, total_pages = 1, 1
         while page <= total_pages:
+            if page > 1 and should_stop is not None and should_stop():
+                return fail(
+                    conn, load_id, result, "stopped", "загрузчик остановлен между страницами"
+                )
             fetched = source.fetch(endpoint, since, page)
             total_pages = fetched.total_pages
             result.http_status = fetched.http_status
@@ -150,6 +167,7 @@ def load_list_endpoint(
         elif result.max_updated is not None:
             store.set_watermark(conn, platform, endpoint, result.max_updated)
     except FetchError as error:
+        result.http_status = error.http_status
         return fail(conn, load_id, result, error.reason_code, error.message)
     except psycopg.Error as error:
         return fail(conn, load_id, result, "db_error", str(error))
@@ -179,6 +197,7 @@ def load_live_status(conn: Connection, source: Source, platform: str) -> Endpoin
             result.rejected = 1
         conn.commit()
     except FetchError as error:
+        result.http_status = error.http_status
         return fail(conn, load_id, result, error.reason_code, error.message)
     except psycopg.Error as error:
         return fail(conn, load_id, result, "db_error", str(error))
@@ -187,12 +206,33 @@ def load_live_status(conn: Connection, source: Source, platform: str) -> Endpoin
 
 
 def load_endpoint(
-    conn: Connection, source: Source, platform: str, endpoint: str, settings: LoaderSettings
+    conn: Connection,
+    source: Source,
+    platform: str,
+    endpoint: str,
+    settings: LoaderSettings,
+    should_stop: StopCheck | None = None,
 ) -> EndpointResult:
-    """Загружает один адрес платформы."""
+    """Загружает один адрес платформы и пишет итог в журнал приложения."""
     if endpoint == LIVE_STATUS:
-        return load_live_status(conn, source, platform)
-    return load_list_endpoint(conn, source, platform, endpoint, settings)
+        result = load_live_status(conn, source, platform)
+    else:
+        result = load_list_endpoint(conn, source, platform, endpoint, settings, should_stop)
+    log_result(result)
+    return result
+
+
+def log_result(result: EndpointResult) -> None:
+    logger.info(
+        "%s %-22s %-7s получено %d, сохранено %d, отклонено %d, устаревших %d",
+        result.platform,
+        result.endpoint,
+        result.status,
+        result.received,
+        result.saved,
+        result.rejected,
+        result.skipped_stale,
+    )
 
 
 def run_cycle(
@@ -201,20 +241,12 @@ def run_cycle(
     platform: str,
     settings: LoaderSettings,
     endpoints: tuple[str, ...] = ALL_ENDPOINTS,
+    should_stop: StopCheck | None = None,
 ) -> list[EndpointResult]:
     """Один цикл по адресам одной платформы. Ошибка одного адреса не останавливает остальные."""
     results = []
     for endpoint in endpoints:
-        result = load_endpoint(conn, source, platform, endpoint, settings)
-        logger.info(
-            "%s %-22s %-7s получено %d, сохранено %d, отклонено %d, устаревших %d",
-            platform,
-            endpoint,
-            result.status,
-            result.received,
-            result.saved,
-            result.rejected,
-            result.skipped_stale,
-        )
-        results.append(result)
+        if should_stop is not None and should_stop():
+            break
+        results.append(load_endpoint(conn, source, platform, endpoint, settings, should_stop))
     return results
