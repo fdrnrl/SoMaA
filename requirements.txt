@@ -28,3 +28,10 @@ hypothesis==6.135.0
 coverage==7.8.0
 pytest-cov==6.1.1
 ruff==0.11.13
+
+# Аномалии
+pandas==3.0.6
+numpy==2.5.4
+scipy==1.18.1
+networkx==3.7
+# для тестов (NFR-21, NFR-19: зафиксировать точные версии при установке): pytest, hypothesis, coverage
