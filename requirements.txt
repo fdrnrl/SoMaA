@@ -17,6 +17,11 @@ Flask==3.0.3
 python-dotenv==1.1.1
 PyYAML==6.0.2
 
+# Дашборд
+streamlit==1.67.0
+matplotlib==3.11.2
+bcrypt==5.0.0
+
 # Тесты и линтер
 pytest==8.3.5
 hypothesis==6.135.0

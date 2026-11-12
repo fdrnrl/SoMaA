@@ -1,0 +1,197 @@
+{
+  "synthetic": true,
+  "note": "Synthetic data; conclusions are limited by generator properties. JSON reference calculation only; PostgreSQL marts and live refresh have not been checked.",
+  "source_archive": "C:\\Users\\dm307\\Downloads\\Тестовые_данные_СМА_v2.zip",
+  "source_archive_sha256": "74a5354f6fd5d8ab4f6ade16ec41954b56d8b7a90f8151c56fba5305b1fb08d6",
+  "fixture": "small.zip",
+  "fixture_sha256": "8db1b87e2c4e144b7300746516a736b1e02caccfe642689d5082f498e0ca7f9d",
+  "generator_version": "2.0.0",
+  "profile": "small",
+  "snapshot": "after_appeal",
+  "verified_manifest_files": 77,
+  "packaged_files": 78,
+  "platforms": [
+    {
+      "exam_type": "EGE",
+      "raw_sessions": 46,
+      "deleted_sessions": 1,
+      "current_sessions": 45,
+      "final_finished": 43,
+      "snapshot_at": "2026-12-11T12:00:00+03:00",
+      "session_counts": {
+        "in_progress": 0,
+        "finished": 43,
+        "annulled": 1,
+        "absent": 1
+      },
+      "live_counts_match": true
+    },
+    {
+      "exam_type": "OGE",
+      "raw_sessions": 48,
+      "deleted_sessions": 1,
+      "current_sessions": 47,
+      "final_finished": 45,
+      "snapshot_at": "2026-12-11T12:00:00+03:00",
+      "session_counts": {
+        "in_progress": 0,
+        "finished": 45,
+        "annulled": 1,
+        "absent": 1
+      },
+      "live_counts_match": true
+    },
+    {
+      "exam_type": "VPR",
+      "raw_sessions": 50,
+      "deleted_sessions": 1,
+      "current_sessions": 49,
+      "final_finished": 47,
+      "snapshot_at": "2026-12-11T12:00:00+03:00",
+      "session_counts": {
+        "in_progress": 0,
+        "finished": 47,
+        "annulled": 1,
+        "absent": 1
+      },
+      "live_counts_match": true
+    },
+    {
+      "exam_type": "NIKO",
+      "raw_sessions": 48,
+      "deleted_sessions": 1,
+      "current_sessions": 47,
+      "final_finished": 45,
+      "snapshot_at": "2026-12-11T12:00:00+03:00",
+      "session_counts": {
+        "in_progress": 0,
+        "finished": 45,
+        "annulled": 1,
+        "absent": 1
+      },
+      "live_counts_match": true
+    }
+  ],
+  "region_results": [
+    {
+      "exam_type": "EGE",
+      "subject_code": "02",
+      "region_code": "16",
+      "region_name": "Республика Татарстан",
+      "participants": 9,
+      "mean_score": "13.44",
+      "mean_pct": "42.01",
+      "share_grade2": null
+    },
+    {
+      "exam_type": "EGE",
+      "subject_code": "02",
+      "region_code": "54",
+      "region_name": "Новосибирская область",
+      "participants": 15,
+      "mean_score": "11.53",
+      "mean_pct": "36.04",
+      "share_grade2": null
+    },
+    {
+      "exam_type": "EGE",
+      "subject_code": "02",
+      "region_code": "77",
+      "region_name": "Москва",
+      "participants": 19,
+      "mean_score": "11.16",
+      "mean_pct": "34.87",
+      "share_grade2": null
+    },
+    {
+      "exam_type": "OGE",
+      "subject_code": "02",
+      "region_code": "16",
+      "region_name": "Республика Татарстан",
+      "participants": 11,
+      "mean_score": "15.64",
+      "mean_pct": "50.44",
+      "share_grade2": "0.2727"
+    },
+    {
+      "exam_type": "OGE",
+      "subject_code": "02",
+      "region_code": "54",
+      "region_name": "Новосибирская область",
+      "participants": 16,
+      "mean_score": "11.94",
+      "mean_pct": "38.51",
+      "share_grade2": "0.5625"
+    },
+    {
+      "exam_type": "OGE",
+      "subject_code": "02",
+      "region_code": "77",
+      "region_name": "Москва",
+      "participants": 18,
+      "mean_score": "16.67",
+      "mean_pct": "53.76",
+      "share_grade2": "0.1667"
+    },
+    {
+      "exam_type": "VPR",
+      "subject_code": "01",
+      "region_code": "16",
+      "region_name": "Республика Татарстан",
+      "participants": 11,
+      "mean_score": "7.09",
+      "mean_pct": "35.45",
+      "share_grade2": "0.4545"
+    },
+    {
+      "exam_type": "VPR",
+      "subject_code": "01",
+      "region_code": "54",
+      "region_name": "Новосибирская область",
+      "participants": 17,
+      "mean_score": "5.65",
+      "mean_pct": "28.24",
+      "share_grade2": "0.5882"
+    },
+    {
+      "exam_type": "VPR",
+      "subject_code": "01",
+      "region_code": "77",
+      "region_name": "Москва",
+      "participants": 19,
+      "mean_score": "7.95",
+      "mean_pct": "39.74",
+      "share_grade2": "0.5263"
+    },
+    {
+      "exam_type": "NIKO",
+      "subject_code": "05",
+      "region_code": "16",
+      "region_name": "Республика Татарстан",
+      "participants": 11,
+      "mean_score": "5.82",
+      "mean_pct": "41.56",
+      "share_grade2": null
+    },
+    {
+      "exam_type": "NIKO",
+      "subject_code": "05",
+      "region_code": "54",
+      "region_name": "Новосибирская область",
+      "participants": 15,
+      "mean_score": "7.27",
+      "mean_pct": "51.90",
+      "share_grade2": null
+    },
+    {
+      "exam_type": "NIKO",
+      "subject_code": "05",
+      "region_code": "77",
+      "region_name": "Москва",
+      "participants": 19,
+      "mean_score": "7.16",
+      "mean_pct": "51.13",
+      "share_grade2": null
+    }
+  ]
+}
