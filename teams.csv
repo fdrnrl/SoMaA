@@ -1,0 +1,4 @@
+team,repo_url,tz_date,tz_done,prototype_date,prototype_done
+ПРИМЕР Команда 1,https://github.com/owner/repo1,2026-11-16,да,2026-11-23,нет
+ПРИМЕР Команда 2,https://github.com/owner/repo2,2026-11-16,нет,2026-11-23,нет
+ПРИМЕР Команда 3,https://github.com/owner/repo3,2026-11-16,да,2026-11-23,нет
