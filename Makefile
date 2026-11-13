@@ -16,7 +16,7 @@ TARGET ?= sma_restore
 
 .PHONY: install up dev db-up down logs psql build migrate db-reset gen-small gen-medium gen-large \
 	load-files loader loader-mock mock-api mock-replay quality backup restore backup-service \
-	test-backup rules dashboard test lint format cov
+	test-backup rules dashboard teams test lint format cov
 
 ## Создать виртуальное окружение и установить зависимости
 install:
@@ -129,6 +129,10 @@ rules:
 ## Дашборд Streamlit (код — dashboard/)
 dashboard:
 	PYTHONPATH=. $(PYTHON) -m streamlit run dashboard/app.py
+
+## Страница «Команды» (код визуализации — visualization/): контрольные точки и GitHub
+teams:
+	PYTHONPATH=. $(PYTHON) -m streamlit run visualization/teams_app.py
 
 ## Тесты. Можно выбрать часть: make test ARGS="tests/unit/test_contract.py -x"
 test:
