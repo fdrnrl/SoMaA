@@ -20,3 +20,6 @@ htmlcov/
 
 # macOS
 .DS_Store
+
+# Кэш ответов GitHub страницы «Команды»
+visualization/cache/
