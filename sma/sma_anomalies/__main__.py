@@ -1,5 +1,5 @@
-"""Запуск:  python -m sma_anomalies <папка набора> <папка результата>
-Пример:   python -m sma_anomalies Тестовые_данные_СМА_v2/medium out/
+"""Запуск:  python -m sma.sma_anomalies <папка набора> <папка результата>
+Пример:   python -m sma.sma_anomalies Тестовые_данные_СМА_v2/medium out/
 """
 import sys
 

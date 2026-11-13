@@ -22,6 +22,16 @@ VIEWS = [
     "live",
     "data_freshness",
 ]
+# Миграция 006: результаты аналитики для дашборда и входные данные расчета.
+ANALYTICS_VIEWS = [
+    "analysis_runs",
+    "anomalies",
+    "school_index",
+    "p1_groups",
+    "proctoring_events",
+    "subjects",
+    "schools",
+]
 MATERIALIZED = [
     "school_results",
     "region_results",
@@ -93,7 +103,7 @@ def test_all_marts_exist(conn):
         row[0]
         for row in conn.execute("SELECT matviewname FROM pg_matviews WHERE schemaname = 'mart'")
     }
-    assert views == set(VIEWS)
+    assert views == set(VIEWS) | set(ANALYTICS_VIEWS)
     assert materialized == set(MATERIALIZED)
 
 

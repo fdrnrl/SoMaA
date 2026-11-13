@@ -14,11 +14,11 @@ from datetime import datetime, timedelta
 
 import pandas as pd
 
-from sma_anomalies import Params, run_dataset
-from sma_anomalies.analysis import analyze_platform
-from sma_anomalies.check_key import check_dataset
-from sma_anomalies.loader import load_exam
-from sma_anomalies.runlog import Scheduler, exam_is_complete
+from sma.sma_anomalies import Params, run_dataset
+from sma.sma_anomalies.analysis import analyze_platform
+from sma.sma_anomalies.check_key import check_dataset
+from sma.sma_anomalies.loader import load_exam
+from sma.sma_anomalies.runlog import Scheduler, exam_is_complete
 
 DATA = os.environ.get("SMA_DATA", "Тестовые_данные_СМА_v2")
 

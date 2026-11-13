@@ -1,6 +1,6 @@
 """Сверка результатов с ключом набора (answer_key.json): заложенное найдено, ловушки не сработали (T-63, FR-53).
 
-Запуск:  python -m sma_anomalies.check_key <папка набора, например medium>
+Запуск:  python -m sma.sma_anomalies.check_key <папка набора, например medium>
 FR-66 (различие вариантов) — витрина и страница «Темы и варианты», к модулю аномалий не относится.
 """
 from __future__ import annotations

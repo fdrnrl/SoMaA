@@ -122,15 +122,12 @@ backup-service:
 test-backup:
 	docker compose --profile exam run --rm --build backup python -m pytest tests/integration/test_backup.py -q
 
-## Расчет правил аномалий (код аналитика — sma/rules/)
+## Расчет аналитики аномалий по данным базы и сохранение в analytics (код аналитика — sma/sma_anomalies/)
 rules:
-	$(PYTHON) -m sma.rules.run
+	$(PYTHON) -m sma.analytics_job
 
-## Дашборд Streamlit (код — dashboard/). Нужен streamlit в requirements.txt (по согласованию)
+## Дашборд Streamlit (код — dashboard/)
 dashboard:
-	@$(PYTHON) -c "import streamlit" 2>/dev/null || { \
-		echo "Streamlit не установлен: добавьте streamlit==<версия> в requirements.txt и make install"; \
-		exit 1; }
 	PYTHONPATH=. $(PYTHON) -m streamlit run dashboard/app.py
 
 ## Тесты. Можно выбрать часть: make test ARGS="tests/unit/test_contract.py -x"

@@ -6,11 +6,11 @@
 import numpy as np
 import pandas as pd
 
-from sma_anomalies import Params, merge_new, rule_a1
-from sma_anomalies.deep import compute_p2, holm_adjust, robust_z
-from sma_anomalies.normalize import normalize_answer
-from sma_anomalies.prep import final_sessions, with_norm_answers
-from tests.synth import make_answers, make_sessions
+from sma.sma_anomalies import Params, merge_new, rule_a1
+from sma.sma_anomalies.deep import compute_p2, holm_adjust, robust_z
+from sma.sma_anomalies.normalize import normalize_answer
+from sma.sma_anomalies.prep import final_sessions, with_norm_answers
+from tests.anomalies.synth import make_answers, make_sessions
 
 N = 60
 

@@ -20,8 +20,8 @@
 ## Запуск
 ```bash
 pip install -r requirements.txt
-python -m sma_anomalies Тестовые_данные_СМА_v2/medium out/        # считает все 4 платформы, пишет CSV
-python -m sma_anomalies.check_key Тестовые_данные_СМА_v2/medium   # сверка с ключом набора (T-63)
+python -m sma.sma_anomalies Тестовые_данные_СМА_v2/medium out/        # считает все 4 платформы, пишет CSV
+python -m sma.sma_anomalies.check_key Тестовые_данные_СМА_v2/medium   # сверка с ключом набора (T-63)
 python tests/run_tests.py            # все тесты одной командой (или просто: pytest -q)
 ```
 Тестам интеграции нужен набор: `SMA_DATA=путь/к/Тестовые_данные_СМА_v2` (по умолчанию ищется в текущей папке; нет набора — тесты пропускаются).

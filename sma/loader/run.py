@@ -32,6 +32,7 @@ import psycopg
 import yaml
 from dotenv import load_dotenv
 
+from sma.analytics_job import AnalysisRunner
 from sma.db import connect
 from sma.loader import store
 from sma.loader.cycle import (
@@ -291,6 +292,7 @@ def run_forever(jobs: list[PlatformJob], config_path: Path | None = None) -> Non
     changed = threading.Event()
     refresher = MartRefresher(changed)
     quality = QualityRunner(config_path)
+    analysis = AnalysisRunner()  # аналитика аномалий по расписанию FR-30
 
     def on_signal(signum, _frame) -> None:
         logger.info("Получен сигнал %s: дожидаемся конца текущих страниц", signum)
@@ -303,6 +305,7 @@ def run_forever(jobs: list[PlatformJob], config_path: Path | None = None) -> Non
         while not stop.is_set() and not all(f.done() for f in futures):
             refresher.tick()
             quality.tick()
+            analysis.tick(time.monotonic())
             stop.wait(1)
     refresher.close()
     for future in futures:

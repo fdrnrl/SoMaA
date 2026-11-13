@@ -34,7 +34,8 @@ API платформ ЕГЭ, ОГЭ, ВПР, НИКО │ генератор (ф
 
 | Кто | Код | Тесты | Запуск |
 |---|---|---|---|
-| Аналитик аномалий | `sma/rules/` — `anomalies.py` (А1–А3), `school_index.py` (П1–П4, индекс), `run.py` (точка входа) | `tests/rules/` | `make rules` |
+| Аналитик аномалий | `sma/sma_anomalies/` — правила А1–А3, П1–П4, индекс ([README аналитика](sma/sma_anomalies/README.md)) | `tests/anomalies/` | `make rules` |
+| Пайплайны: запуск аналитики | `sma/analytics_job.py` — данные из витрин → модуль аналитика → схема `analytics` | `tests/integration/test_analytics_job.py` | `make rules` (и загрузчик по расписанию) |
 | Разработчик дашбордов | `dashboard/` — `app.py` (главная), `pages/` (остальные страницы), `data.py` (запросы к витринам), `auth.py` (вход) | `tests/dashboard/` | `make dashboard` |
 | Пайплайны | все остальное: `sma/loader`, `sma/generator`, `db/`, … | `tests/unit`, `tests/integration`, `tests/properties` | см. команды ниже |
 

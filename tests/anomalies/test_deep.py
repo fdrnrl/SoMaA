@@ -2,10 +2,10 @@
 import numpy as np
 import pandas as pd
 
-from sma_anomalies import Params, analyze_exam
-from sma_anomalies.deep import compute_p2, holm_adjust, robust_z
-from sma_anomalies.prep import final_sessions, with_norm_answers
-from tests.synth import make_answers, make_sessions, set_answers, subjects
+from sma.sma_anomalies import Params, analyze_exam
+from sma.sma_anomalies.deep import compute_p2, holm_adjust, robust_z
+from sma.sma_anomalies.prep import final_sessions, with_norm_answers
+from tests.anomalies.synth import make_answers, make_sessions, set_answers, subjects
 
 
 def _base(n_schools=12, n=12, seed=3, scores=None):

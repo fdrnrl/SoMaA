@@ -293,6 +293,12 @@ def pid(plan: Plan, index: int) -> str:
     return plan.participants[index].participant_id
 
 
+def where(plan: Plan, index: int) -> dict:
+    """Школа и регион участника — для ключа (по ним проверяют, где сработало правило)."""
+    participant = plan.participants[index]
+    return {"school_code": participant.school_code, "region_code": participant.region_code}
+
+
 def self_check(records: dict[str, list[dict]], exam: ExamConfig, plan: Plan) -> dict:
     """Прогоняет эталонные правила и сверяет с планом (раздел 10.9).
 
@@ -338,7 +344,8 @@ def self_check(records: dict[str, list[dict]], exam: ExamConfig, plan: Plan) -> 
     for index, count in plan.a3_counts.items():
         if pid(plan, index) not in a3_found:
             problems.append(f"A3 {pid(plan, index)} не найден")
-        planted.append({"rule": "A3", "participant_id": pid(plan, index), "counted_events": count})
+        planted.append({"rule": "A3", "participant_id": pid(plan, index), "counted_events": count,
+                        **where(plan, index)})  # fmt: skip
 
     p1_planted = []
     for group, tasks in plan.p1_groups:
@@ -381,7 +388,7 @@ def self_check(records: dict[str, list[dict]], exam: ExamConfig, plan: Plan) -> 
     for index in plan.p2:
         if not leads(p2, "g_star", "participant_id", pid(plan, index), planted_people):
             problems.append(f"P2 {pid(plan, index)} не наибольший G*")
-        planted.append({"rule": "P2", "participant_id": pid(plan, index)})
+        planted.append({"rule": "P2", "participant_id": pid(plan, index), **where(plan, index)})
     for code in plan.p3_schools:
         if not leads(p3, "p3", "school_code", code, planted_schools):
             problems.append(f"P3 {code} не наибольший П3")
@@ -401,13 +408,20 @@ def self_check(records: dict[str, list[dict]], exam: ExamConfig, plan: Plan) -> 
         if any(ids & found for found in a2_found):
             problems.append(f"ловушка A2_blank {sorted(ids)} сработала")
         decoys.append({"rule": "A2", "kind": "A2_blank", "participant_ids": sorted(ids),
+                       **where(plan, group[0]),
                        "why": "все ответы части 1 пустые: непустых меньше половины"})  # fmt: skip
     for index in plan.focus_decoys:
         if pid(plan, index) in a3_found:
             problems.append(f"ловушка A3_focus {pid(plan, index)} сработала")
         why = "5 focus_lost и 2 tab_switch: засчитываемых событий меньше 3"
         decoys.append(
-            {"rule": "A3", "kind": "A3_focus", "participant_id": pid(plan, index), "why": why}
+            {
+                "rule": "A3",
+                "kind": "A3_focus",
+                "participant_id": pid(plan, index),
+                **where(plan, index),
+                "why": why,
+            }
         )
 
     a2_extra = [found for found in a2_found if found not in a2_planted]

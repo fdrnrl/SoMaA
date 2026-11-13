@@ -19,7 +19,7 @@
 
 | Кто | Код | Тесты | Запуск |
 |---|---|---|---|
-| Аналитик аномалий | `sma/rules/anomalies.py` (А1–А3), `sma/rules/school_index.py` (П1–П4, индекс), `sma/rules/run.py` (точка входа) | `tests/rules/` | `make rules` |
+| Аналитик аномалий | `sma/sma_anomalies/` (правила, показатели, индекс; описание — `sma/sma_anomalies/README.md`) | `tests/anomalies/` | `make rules` |
 | Разработчик дашбордов | `dashboard/app.py` (главная), `dashboard/pages/` (страницы), `dashboard/data.py` (запросы), `dashboard/auth.py` (вход) | `tests/dashboard/` | `make dashboard` |
 
 Файлы уже созданы — в каждом сверху написано, что в нем должно быть. Пишите только
@@ -205,6 +205,36 @@ DBeaver: PostgreSQL, host `localhost`, port `5432`, database `sma`, user и па
 Сравнивайте ответы по **`answer_norm`**, а не по `answer`: ученики пишут «0.5», «0,5» и « 0,5».
 Считайте правила по сданным работам с итогом:
 `WHERE status = 'finished' AND result_status <> 'pending'`.
+
+### Как результаты попадают в базу и на дашборд
+
+Модуль аналитика только считает (возвращает DataFrame). Читает данные, сохраняет результаты
+и запускает расчет по расписанию пайплайн — `sma/analytics_job.py`:
+
+1. читает входные таблицы из витрин (`mart.sessions_current`, `mart.answers_flat`,
+   `mart.proctoring_events`, `mart.subjects`, `mart.schools`) под ролью `sma_app`;
+2. вызывает `analyze_platform` модуля аналитика по каждой платформе (формулы и пороги — его);
+3. пишет запуск и все результаты **одной транзакцией**: `analytics.analysis_runs` (статус, момент
+   снимка `data_as_of`, область `scope` — какие экзамены и предметы посчитаны, причина `reason`),
+   `analytics.anomalies` (с заменой по ключу: `anomaly_id` постоянный, `run_id` — расчет,
+   нашедший впервые, `last_run_id` — последний подтвердивший), `analytics.school_index`,
+   `analytics.p1_groups`.
+
+Запуск: вручную `make rules`; загрузчик — по планировщику модуля аналитика (FR-30: каждые
+10 минут во время экзамена и один раз после него).
+
+Дашборд читает результаты под `sma_reader` из витрин (имена — в `.env`, переменные `SMA_DASHBOARD_*_VIEW`):
+
+| Витрина | Что в ней |
+|---|---|
+| `mart.analysis_runs` | только **завершенные** расчеты: `run_id`, `started_at`, `finished_at`, `reason`, `data_as_of`, `scope`, `params`, `summary` |
+| `mart.anomalies` | аномалии + `run_id`, `last_run_id`, `is_active` (подтверждена последним расчетом своего экзамена), `is_new` (найдена им впервые), `details` |
+| `mart.school_index` | показатели школ расчета + `calculated_at` (= момент снимка данных) |
+| `mart.p1_groups` | группы П1 расчета |
+
+Пустой результат и отсутствие расчета различаются: если в `mart.analysis_runs` есть расчет,
+в `scope` которого есть экзамен, а строк нет, — расчет был, нарушений нет; если такого расчета
+нет — данные еще не считались.
 
 ### Куда писать результаты
 

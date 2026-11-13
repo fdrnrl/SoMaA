@@ -2,9 +2,9 @@
 import numpy as np
 import pandas as pd
 
-from sma_anomalies import Params, merge_new, rule_a1, rule_a2, rule_a3, run_rules
-from sma_anomalies.normalize import normalize_answer
-from tests.synth import events, make_answers, make_sessions, set_answers
+from sma.sma_anomalies import Params, merge_new, rule_a1, rule_a2, rule_a3, run_rules
+from sma.sma_anomalies.normalize import normalize_answer
+from tests.anomalies.synth import events, make_answers, make_sessions, set_answers
 
 
 def _region_with_outlier(n_schools=10):
