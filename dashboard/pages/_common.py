@@ -8,7 +8,7 @@ from dashboard.presentation import EXAM_NAMES, time_text
 
 def _begin(st, service, title, mode):
     ui.require_user(st=st, service=service)
-    st.title(title)
+    ui.page_heading(st, title)
     if mode == "demo":
         st.warning("Синтетические данные · статический снимок. Выводы ограничены генератором.")
     elif data.database_is_synthetic():
@@ -25,9 +25,10 @@ def _read(st, mode, key, loader, *, provenance=False):
         return None
     if provenance:
         source = page["source"]
-        st.caption(source["note"])
-        if source.get("snapshot"):
-            st.caption("Снимок: " + str(source["snapshot"]))
+        with st.expander("Об источнике данных", expanded=False):
+            st.caption(source["note"])
+            if source.get("snapshot"):
+                st.caption("Снимок: " + str(source["snapshot"]))
     return page["data"]
 
 
@@ -38,7 +39,12 @@ def _choice(st, service, label, options, key, *, format_func=str):
                         on_change=ui.user_activity, kwargs={"st": st, "service": service})
 
 
-def _filters(st, service, mode, page, *, exams=data.EXAMS, region=False, compact=False):
+def _filters(st, service, mode, page, *, exams=data.EXAMS, region=False, compact=True):
+    with st.container(border=True):
+        return _filter_fields(st, service, mode, page, exams, region, compact)
+
+
+def _filter_fields(st, service, mode, page, exams, region, compact):
     columns = st.columns(3 if region else 2) if compact else None
     with columns[0] if columns else nullcontext():
         exam = _choice(st, service, "Экзамен", list(exams), page + "_exam",
@@ -67,7 +73,8 @@ def _filters(st, service, mode, page, *, exams=data.EXAMS, region=False, compact
 
 def _plot(st, create):
     try:
-        st.pyplot(create())
+        with st.container(border=True):
+            st.pyplot(create())
     except ImportError:
         st.warning("Для графика необходим matplotlib. Таблица данных доступна ниже.")
 

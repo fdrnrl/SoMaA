@@ -255,6 +255,11 @@ class StreamlitPageTests(unittest.TestCase):
 
         self.assertEqual(app.session_state[SESSION_KEY].role, "staff")
         self.assertFalse(any(t.key == "_sma_new_login" for t in app.text_input))
+        labels = [link.proto.label for link in app.get("page_link")]
+        self.assertNotIn("Учетные записи", labels)
+        from dashboard.pages import WORK_PAGES
+
+        self.assertTrue(all(labels.count(title) == 2 for title, _, _ in WORK_PAGES))
 
     def test_live_rerun_does_not_extend_session_activity(self):
         from dashboard.auth import SESSION_KEY

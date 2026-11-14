@@ -380,7 +380,7 @@ class FakeStreamlit:
     def markdown(self, *args, **kwargs):
         pass
 
-    def Page(self, render, title, default=False, url_path=None):
+    def Page(self, render, title, default=False, url_path=None, **kwargs):
         return SimpleNamespace(run=render, title=title, url_path=url_path or "", default=default)
 
     def navigation(self, pages, **kwargs):
@@ -393,10 +393,19 @@ class FakeStreamlit:
     def form(self, *args, **kwargs):
         return nullcontext()
 
+    container = form
+    expander = form
+
+    def columns(self, count):
+        return [nullcontext() for _ in range(count)]
+
+    def page_link(self, *args, **kwargs):
+        pass
+
     def text_input(self, label, key, **kwargs):
         self.session_state.setdefault(key, "")
 
-    def form_submit_button(self, label, on_click=None, args=()):
+    def form_submit_button(self, label, on_click=None, args=(), **kwargs):
         self.callbacks[label] = lambda: on_click(*args)
 
     def selectbox(self, label, options, key, **kwargs):
@@ -408,6 +417,9 @@ class FakeStreamlit:
 
     def text(self, *args):
         pass
+
+    caption = text
+    subheader = text
 
     def title(self, *args):
         pass

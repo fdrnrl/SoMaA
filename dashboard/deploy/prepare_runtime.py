@@ -18,7 +18,7 @@ def prepare(source, target):
         raise ValueError("Target contains unrelated files")
     target.mkdir(parents=True, exist_ok=True)
     hashes = {}
-    roots = ("dashboard", "sma", "db", "config", "docs", "tests")
+    roots = ("dashboard", "visualization", "sma", "db", "config", "docs", "tests")
     top = ("README.md", "Makefile", "Dockerfile", "docker-compose.yml", "requirements.txt",
            "pyproject.toml", ".env.example", ".dockerignore", ".gitattributes", ".gitignore")
     files = [source / name for name in top]
@@ -27,6 +27,8 @@ def prepare(source, target):
         relative = path.relative_to(source)
         if any(part in ("__pycache__", ".pytest_cache", "artifacts", ".venv", ".local")
                for part in relative.parts):
+            continue
+        if relative.parts[:2] == ("visualization", "cache"):
             continue
         destination = target / relative
         destination.parent.mkdir(parents=True, exist_ok=True)

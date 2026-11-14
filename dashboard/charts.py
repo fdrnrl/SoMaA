@@ -6,14 +6,26 @@ from textwrap import fill
 
 from dashboard.presentation import EXAM_NAMES, distribution_stats, score_text
 
-COLORS = ("#145DA0", "#A23B00", "#287A48", "#713E9A")
+COLORS = ("#2457D6", "#B45309", "#0F766E", "#7C3AED")
 
 
 def figure(height=4):
     from matplotlib.figure import Figure
 
-    result = Figure(figsize=(11, height), layout="constrained")
-    return result, result.subplots()
+    result = Figure(figsize=(11, height), layout="constrained", dpi=120, facecolor="white")
+    ax = result.subplots()
+    ax.set_facecolor("white")
+    ax.set_axisbelow(True)
+    for name, spine in ax.spines.items():
+        spine.set_visible(name not in ("top", "right"))
+        spine.set_color("#DCE3ED")
+    ax.tick_params(axis="both", length=0, pad=7, labelsize=10, labelcolor="#334155")
+    for label in (ax.xaxis.label, ax.yaxis.label):
+        label.set_color("#334155")
+        label.set_fontsize(10)
+    ax.xaxis.labelpad = ax.yaxis.labelpad = 12
+    ax.grid(axis="x", color="#E8EDF5", linewidth=0.7)
+    return result, ax
 
 
 def distribution(rows):
@@ -24,7 +36,8 @@ def distribution(rows):
     ax.set(xlabel="Первичный балл", ylabel="Участники", xlim=(-0.6, maximum + 0.6))
     ax.yaxis.get_major_locator().set_params(integer=True)
     ax.set_axisbelow(True)
-    ax.grid(axis="y", color="#DDDDDD", linewidth=0.6)
+    ax.grid(False, axis="x")
+    ax.grid(axis="y", color="#E8EDF5", linewidth=0.7)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     stats = distribution_stats(rows)
@@ -64,7 +77,8 @@ def comparison(rows, exams):
 def bars(labels, values, xlabel, *, maximum=100, colors=COLORS[0]):
     result, ax = figure(max(3.5, len(labels) * 0.45))
     ax.barh(range(len(labels)), values, color=colors)
-    ax.set(yticks=range(len(labels)), yticklabels=labels, xlabel=xlabel, xlim=(0, maximum))
+    ax.set(yticks=range(len(labels)), yticklabels=[_label(label, 42) for label in labels],
+           xlabel=xlabel, xlim=(0, maximum))
     ax.invert_yaxis()
     return result
 
@@ -94,6 +108,7 @@ def regions(rows, features):
     from matplotlib.path import Path
 
     result, ax = figure(5)
+    ax.grid(False)
     values = {r["region_code"]: r["mean_score"] for r in rows}
     scores = [v for v in values.values() if v is not None]
     norm = Normalize(vmin=0, vmax=max(scores) if scores and max(scores) > 0 else 1)
@@ -136,6 +151,7 @@ def _heatmap(values, xlabels, ylabels, xlabel, ylabel):
     from matplotlib import colormaps
 
     result, ax = figure(max(3.5, len(ylabels) * 0.6 + 1.4))
+    ax.grid(False)
     if not xlabels or not ylabels:
         ax.text(0.5, 0.5, "Нет данных", ha="center", va="center", transform=ax.transAxes)
         ax.set_axis_off()
@@ -275,5 +291,6 @@ def cumulative_distribution(rows):
     ax.set(xlabel="Первичный балл", ylabel="Участники с баллом не выше указанного, %",
            ylim=(0, 101))
     ax.set_axisbelow(True)
-    ax.grid(alpha=0.25)
+    ax.grid(False, axis="x")
+    ax.grid(axis="y", color="#E8EDF5", linewidth=0.7)
     return result

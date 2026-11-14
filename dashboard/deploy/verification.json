@@ -1,0 +1,63 @@
+{
+  "url": "http://localhost:8501",
+  "runtime": "/home/dima/SoMaA-local",
+  "screens": [
+    {
+      "page": "distribution",
+      "rendered": true,
+      "tables": 1,
+      "participants": "408"
+    },
+    {
+      "page": "comparison",
+      "rendered": true,
+      "tables": 1
+    },
+    {
+      "page": "grades",
+      "rendered": true,
+      "tables": 1
+    },
+    {
+      "page": "regions",
+      "rendered": true,
+      "tables": 1
+    },
+    {
+      "page": "topics",
+      "rendered": true,
+      "tables": 3
+    },
+    {
+      "page": "live",
+      "rendered": true,
+      "tables": 1
+    },
+    {
+      "page": "anomalies",
+      "rendered": true,
+      "tables": 0,
+      "awaiting_analytics_sources": true
+    },
+    {
+      "page": "analysis",
+      "rendered": true,
+      "tables": 0,
+      "awaiting_analytics_sources": true
+    }
+  ],
+  "login": "passed",
+  "status": "passed",
+  "database_role_checks": [
+    {
+      "role": "sma_reader",
+      "reads_app_users": false,
+      "core_update_denied": true
+    },
+    {
+      "role": "sma_app",
+      "reads_app_users": true,
+      "core_update_denied": true
+    }
+  ]
+}

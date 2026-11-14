@@ -7,7 +7,14 @@ ROLE_NAMES = {"staff": "Сотрудник Рособрнадзора", "admin":
 
 
 def login_page(st, service):
+    with st.container(key="sma_login_panel"):
+        ui.brand(st)
+        _login_form(st, service)
+
+
+def _login_form(st, service):
     st.title("Вход в СМА")
+    st.caption("Войдите, чтобы работать с результатами экзаменов и мониторингом платформ.")
     notice = st.session_state.pop(ui.NOTICE_KEY, None)
     if notice:
         st.info(notice)
@@ -31,18 +38,26 @@ def login_page(st, service):
         st.text_input("Логин", key="_sma_login_name", max_chars=128)
         st.text_input("Пароль", type="password", key="_sma_login_password",
                       max_chars=auth.MAX_PASSWORD_BYTES)
-        st.form_submit_button("Войти", on_click=submit)
+        st.form_submit_button("Войти", on_click=submit, type="primary", width="stretch")
 
 
-def home_page(st, service):
-    user = ui.require_user(st=st, service=service)
-    st.title("СМА")
-    st.write(ROLE_NAMES[user["role"]])
+def home_page(st, service, links=()):
+    ui.require_user(st=st, service=service)
+    ui.page_heading(st, "СМА")
+    st.caption("ЕГЭ · ОГЭ · ВПР · НИКО")
+    st.write("Результаты экзаменов, ход загрузок и сигналы для дополнительной проверки "
+             "в одном рабочем пространстве.")
+    st.subheader("С чего начать")
+    for start in range(0, len(links), 2):
+        for column, (title, page) in zip(st.columns(2), links[start:start + 2], strict=False):
+            with column, st.container(border=True, key="sma_home_card_" + page.url_path):
+                st.page_link(page, label=title, icon=ui.page_icon(title))
+                st.caption(ui.PAGE_DETAILS[title][1])
 
 
 def accounts_page(st, service):
     actor = ui.require_user("admin", st=st, service=service)
-    st.title("Учетные записи")
+    ui.page_heading(st, "Учетные записи")
     notice = st.session_state.pop("_sma_accounts_notice", None)
     if notice:
         kind, message = notice
@@ -99,7 +114,8 @@ def main(st=None, service=None):
     if st is None:
         import streamlit as st
     service = service if service is not None else auth.AuthService()
-    st.set_page_config(page_title="СМА", layout="wide")
+    st.set_page_config(page_title="СМА · Аналитика экзаменов", page_icon=":material/monitoring:",
+                       layout="wide", initial_sidebar_state="expanded")
     ui.apply_styles(st)
     user = None
     if auth.SESSION_KEY in st.session_state:
@@ -113,22 +129,35 @@ def main(st=None, service=None):
         ], position="hidden").run()
         return
 
-    st.sidebar.text(user["login"] + " · " + ROLE_NAMES[user["role"]])
-    st.sidebar.button("Выйти", on_click=auth.logout, args=(st.session_state,))
+    links = []
+    for title, path, render in work_pages.WORK_PAGES:
+        page = st.Page(lambda render=render: render(st, service, mode),
+                       title=title, url_path=path, icon=ui.page_icon(title))
+        links.append((title, page))
+    home = st.Page(lambda: home_page(st, service, links), title="Главная", default=True,
+                   icon=":material/space_dashboard:")
+    groups = [("Обзор", [("Главная", home)]), ("Результаты экзаменов", links[:4]),
+              ("Мониторинг и анализ", links[4:])]
+    if user["role"] == "admin":
+        accounts = st.Page(lambda: accounts_page(st, service), title="Учетные записи",
+                           url_path="accounts", icon=ui.page_icon("Учетные записи"))
+        groups.append(("Администрирование", [("Учетные записи", accounts)]))
+    selected = st.navigation([page for _, group in groups for _, page in group], position="hidden")
+    ui.brand(st.sidebar)
+    for heading, group in groups:
+        st.sidebar.markdown('<p class="sma-nav-section">' + heading + '</p>',
+                            unsafe_allow_html=True)
+        for title, page in group:
+            st.sidebar.page_link(page, label=title)
+    st.sidebar.markdown("---")
     mode = st.sidebar.selectbox(
         "Источник данных", ("database", "demo"), key="_sma_data_mode",
         format_func=lambda value: "База данных" if value == "database"
         else "Синтетический снимок", on_change=ui.user_activity,
         kwargs={"st": st, "service": service},
     )
-    pages = [st.Page(lambda: home_page(st, service), title="Главная", default=True)]
-    for title, path, render in work_pages.WORK_PAGES:
-        pages.append(st.Page(lambda render=render: render(st, service, mode),
-                             title=title, url_path=path))
-    if user["role"] == "admin":
-        pages.append(st.Page(lambda: accounts_page(st, service), title="Учетные записи",
-                             url_path="accounts"))
-    selected = st.navigation(pages)
+    st.sidebar.text(user["login"] + " · " + ROLE_NAMES[user["role"]])
+    st.sidebar.button("Выйти", on_click=auth.logout, args=(st.session_state,))
     previous = st.session_state.get("_sma_previous_page")
     if previous is not None and previous != selected.url_path:
         ui.user_activity(st=st, service=service)

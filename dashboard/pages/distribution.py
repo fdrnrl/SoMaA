@@ -15,7 +15,8 @@ def distribution_page(st, service, mode):
                  provenance=True)
     if rows is None:
         return
-    st.caption("Сданные работы с окончательным результатом, включая изменения после апелляции.")
+    st.caption("Окончательные результаты, включая апелляции. "
+               "Показатели учитывают число участников на каждом балле.")
     stats = distribution_stats(rows)
     if not stats["participants"]:
         st.info("Нет окончательных результатов для выбранных фильтров.")
@@ -36,8 +37,6 @@ def distribution_page(st, service, mode):
     )
     for column, (label, value, help_text) in zip(st.columns(4), metrics, strict=True):
         column.metric(label, value, help=help_text)
-    st.caption("Показатели рассчитаны по первичным баллам "
-               "с учетом числа участников на каждом балле.")
     view = st.radio("Вид распределения", ("Частоты баллов", "Накопленная доля"),
                     horizontal=True, key="distribution_view", on_change=ui.user_activity,
                     kwargs={"st": st, "service": service})

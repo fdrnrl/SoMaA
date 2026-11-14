@@ -43,7 +43,8 @@ def _live_body(st, service, mode):
     result = _read(st, mode, ("live", before), lambda r: _live_read(r, before), provenance=True)
     if result is None:
         return
-    run = _run_choice(st, service, result["runs"], "live_run")
+    run = (_run_choice(st, service, result["runs"], "live_run")
+           if not result["runs"]["error"] else None)
     if run != before:
         result = _read(st, mode, ("live", run), lambda r: _live_read(r, run))
         if result is None:
@@ -51,24 +52,19 @@ def _live_body(st, service, mode):
     if result["run"]:
         st.caption("Расчет школ " + str(run) + " · "
                    + time_text(result["run"]["finished_at"]))
-        st.write("Параметры расчета:", result["run"]["params"])
-    _feed(st, mode, result["feed"])
+        with st.expander("Параметры расчета школ", expanded=False):
+            st.write(result["run"]["params"])
     st.subheader("Платформы")
-    st.caption("Обновление каждые 30 с. Все времена — московские; «—» означает нет сведений.")
-    st.caption("Число школ относится к выбранному расчету. Отсутствие платформы в его "
-               "результатах не означает нулевой счетчик.")
+    now = datetime.now(data.MSK)
+    st.caption("Экран обновлен: " + time_text(now) + " · автоматически каждые 30 с.")
     live = {r["exam_type"]: r for r in result["live"]}
     schools = result["schools"]
     counts = None if schools is None or schools["error"] else {
         r["exam_type"]: r["schools"] for r in schools["rows"]}
-    if schools and schools["error"]:
-        st.info(schools["error"])
-    st.subheader("Состояния работ по платформам")
     st.caption("Абсолютные количества из сводки. При неполной сводке платформа не сравнивается.")
     _plot(st, lambda: charts.platform_statuses(result["live"], data.EXAMS))
-    now = datetime.now(data.MSK)
     for exam, column in zip(data.EXAMS, st.columns(4), strict=True):
-        with column:
+        with column, st.container(border=True, key="sma_platform_" + exam):
             st.subheader(EXAM_NAMES[exam])
             row = live.get(exam)
             if row is None:
@@ -91,6 +87,14 @@ def _live_body(st, service, mode):
                     st.warning("Загрузка задерживается более чем на 120 с.")
                 if is_stale(row["generated_at"], now):
                     st.warning("Сводка старше 120 с.")
+    st.caption("Все времена — московские; «—» означает нет сведений. "
+               "Число школ относится к выбранному расчету. Отсутствие платформы в его "
+               "результатах не означает нулевой счетчик.")
+    if result["runs"]["error"]:
+        st.info(result["runs"]["error"])
+    if schools and schools["error"]:
+        st.info(schools["error"])
+    _feed(st, mode, result["feed"])
     st.subheader("Свежесть загрузок")
     fresh = result["freshness"]
     if not fresh:

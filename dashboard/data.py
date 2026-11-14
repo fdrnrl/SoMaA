@@ -139,8 +139,11 @@ class MartData:
     def _source(self, name):
         source = self.sources.get(name)
         if not source:
+            labels = {"anomalies": "оперативные аномалии", "runs": "завершенные расчеты школ",
+                      "schools": "перечень школ", "p1_groups": "группы участников П1"}
             raise DataUnavailable(
-                "Источник аналитики еще не согласован: " + name, "source_not_configured"
+                "Пока не подключены данные: " + labels.get(name, name) + ".",
+                "source_not_configured",
             )
         if not re.fullmatch(r"mart\.[a-z_][a-z0-9_]*", source):
             raise DataUnavailable("Недопустимое имя источника аналитики.", "invalid_source")

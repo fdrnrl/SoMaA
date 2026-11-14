@@ -55,7 +55,8 @@ def analysis_page(st, service, mode):
     st.write("Запуск:", run)
     st.caption("Начат: " + time_text(result["run"]["started_at"]) + " · Завершен: "
                + time_text(result["run"]["finished_at"]))
-    st.write("Параметры:", result["run"]["params"])
+    with st.expander("Параметры расчета", expanded=False):
+        st.write(result["run"]["params"])
     st.caption("Индекс по убыванию; z1…z4b — скорректированные значения z′. "
                "Расчетное время каждой строки — calculated_at.")
     filename = f"schools_run_{run}_exam_{exam or 'all'}_subject_{subject or 'all'}.csv"
